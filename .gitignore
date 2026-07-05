@@ -1,0 +1,49 @@
+# === Node / 프론트엔드 ===
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# === Rust / Tauri 백엔드 ===
+src-tauri/target/
+target/
+**/*.rs.bk
+*.pdb
+
+# === Tauri 빌드 산출물 ===
+src-tauri/gen/
+*.app
+*.dmg
+
+# === Python (python/ 스크립트) ===
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# === 모델 / 대용량 파일 (리포 커밋 금지 — CLAUDE.md 규칙) ===
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.onnx
+*.gguf
+*.lora
+models/
+checkpoints/
+
+# === 앱 데이터 / 생성 산출물 ===
+outputs/
+history/
+*.log
+
+# === OS / 에디터 ===
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
