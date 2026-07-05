@@ -9,6 +9,7 @@ pub mod db;
 pub mod engine;
 pub mod error;
 pub mod paths;
+pub mod prompt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
