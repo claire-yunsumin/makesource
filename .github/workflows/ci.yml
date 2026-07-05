@@ -5,10 +5,10 @@ on:
     branches: [main]
   pull_request:
 
-# 동일 브랜치의 이전 실행은 취소
+# PR의 이전 실행만 취소 (main push는 취소하지 않아 main 그린 기록을 보존)
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
