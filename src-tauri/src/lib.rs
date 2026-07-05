@@ -1,18 +1,19 @@
 //! LocalBrush Rust 백엔드 진입점.
-//! command/engine/training/bootstrap/prompt 모듈은 해당 태스크에서 추가한다 (TAD §2).
+//! training/prompt 모듈은 해당 태스크에서 추가한다 (TAD §2).
 
 use tauri::Manager;
 
 pub mod bootstrap;
 pub mod commands;
 pub mod db;
+pub mod engine;
 pub mod error;
 pub mod paths;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // CLAUDE.md 규칙 5: unwrap/expect는 테스트에서만. 여기선 명시적으로 처리.
-    let result = tauri::Builder::default()
+    let app = tauri::Builder::default()
         .setup(|app| {
             // 앱 데이터 루트(~/Library/Application Support/LocalBrush)에
             // app.db 생성 + 마이그레이션 (TAD §3)
@@ -20,16 +21,56 @@ pub fn run() {
             let db = tauri::async_runtime::block_on(db::Db::connect(&paths::db_path(&data_root)))?;
             app.manage(db);
             app.manage(commands::bootstrap::BootstrapJob::default());
+
+            // 엔진 수퍼바이저 (TAD §6). 부트스트랩 완료 상태면 즉시 기동.
+            let config = engine::EngineConfig::from_data_root(&data_root);
+            let manager = engine::EngineManager::new(
+                config.spawn_spec(),
+                Some(data_root.join("logs/engine.log")),
+            );
+            let engine_state = commands::engine::Engine {
+                manager: manager.clone(),
+                config: config.clone(),
+                client: reqwest::Client::new(),
+            };
+            app.manage(engine_state);
+
+            let bootstrap_ready = bootstrap::state::BootstrapState::load(
+                &bootstrap::Bootstrapper::new(data_root).state_path(),
+            )
+            .is_ready();
+            if bootstrap_ready && config.is_installed() {
+                tauri::async_runtime::block_on(async {
+                    if let Err(e) = manager.start().await {
+                        // 기동 실패는 치명적이지 않음 — engine_health가 false를 반환하고
+                        // UI에서 재시작 유도 (04 §6)
+                        eprintln!("엔진 자동 기동 실패: {e}");
+                    }
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::bootstrap::bootstrap_status,
             commands::bootstrap::bootstrap_run,
+            commands::engine::engine_health,
         ])
-        .run(tauri::generate_context!());
+        .build(tauri::generate_context!());
 
-    if let Err(err) = result {
-        eprintln!("치명적: Tauri 앱을 실행하지 못했습니다: {err}");
-        std::process::exit(1);
-    }
+    let app = match app {
+        Ok(app) => app,
+        Err(err) => {
+            eprintln!("치명적: Tauri 앱을 초기화하지 못했습니다: {err}");
+            std::process::exit(1);
+        }
+    };
+
+    app.run(|app_handle, event| {
+        // 앱 종료 시 엔진 서브프로세스 kill (TAD §6)
+        if let tauri::RunEvent::Exit = event {
+            if let Some(engine) = app_handle.try_state::<commands::engine::Engine>() {
+                tauri::async_runtime::block_on(engine.manager.shutdown());
+            }
+        }
+    });
 }

@@ -55,3 +55,14 @@ export function bootstrapStatus(): Promise<BootstrapStatus> {
 export function bootstrapRun(modelProfile: ModelProfile): Promise<string> {
   return invokeCommand<string>("bootstrap_run", { modelProfile });
 }
+
+// ---- engine (TAD §5, §6) ----
+
+export interface EngineHealth {
+  running: boolean;
+  modelLoaded: boolean;
+}
+
+export function engineHealth(): Promise<EngineHealth> {
+  return invokeCommand<EngineHealth>("engine_health");
+}

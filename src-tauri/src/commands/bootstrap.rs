@@ -95,10 +95,20 @@ pub async fn bootstrap_run(
     tauri::async_runtime::spawn(async move {
         let bootstrapper = Bootstrapper::new(root);
         // 에러는 run() 내부에서 error 필드가 담긴 progress 이벤트로 이미 알림
-        let _ = bootstrapper
-            .run(model_profile, emit)
-            .await
-            .map_err(|e| eprintln!("bootstrap 실패: {e}"));
+        let result = bootstrapper.run(model_profile, emit).await;
+        match result {
+            Ok(()) => {
+                // 설치 완료 → 엔진 자동 기동 (TAD §6)
+                if let Some(engine) = app3.try_state::<crate::commands::engine::Engine>() {
+                    if engine.config.is_installed() {
+                        if let Err(e) = engine.manager.start().await {
+                            eprintln!("설치 후 엔진 기동 실패: {e}");
+                        }
+                    }
+                }
+            }
+            Err(e) => eprintln!("bootstrap 실패: {e}"),
+        }
         // 완료/실패 후 재실행 허용
         if let Some(job) = app3.try_state::<BootstrapJob>() {
             if let Ok(mut running) = job.0.lock() {
