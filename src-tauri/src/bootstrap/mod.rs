@@ -399,7 +399,10 @@ mod tests {
         assert!(b.venv_python().exists(), "venv 파이썬이 생성돼야 함");
 
         b.step_clone_comfyui().await.unwrap();
-        assert!(b.comfyui_dir().join("main.py").exists(), "ComfyUI main.py 존재");
+        assert!(
+            b.comfyui_dir().join("main.py").exists(),
+            "ComfyUI main.py 존재"
+        );
         // 멱등성: 재실행해도 성공
         b.step_clone_comfyui().await.unwrap();
 
