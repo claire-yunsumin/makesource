@@ -3,7 +3,10 @@
 
 use tauri::Manager;
 
+pub mod bootstrap;
+pub mod commands;
 pub mod db;
+pub mod error;
 pub mod paths;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -16,8 +19,13 @@ pub fn run() {
             let data_root = paths::app_data_root(&app.path().data_dir()?);
             let db = tauri::async_runtime::block_on(db::Db::connect(&paths::db_path(&data_root)))?;
             app.manage(db);
+            app.manage(commands::bootstrap::BootstrapJob::default());
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            commands::bootstrap::bootstrap_status,
+            commands::bootstrap::bootstrap_run,
+        ])
         .run(tauri::generate_context!());
 
     if let Err(err) = result {
