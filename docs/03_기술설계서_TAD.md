@@ -13,7 +13,7 @@
 | 프론트엔드 | React 18 + TypeScript + Vite | |
 | 상태 관리 | Zustand | 전역 최소화, 화면 로컬 상태 우선 |
 | 스타일 | Tailwind CSS + 디자인 토큰(04 문서) | |
-| 로컬 DB | SQLite (tauri-plugin-sql) | |
+| 로컬 DB | SQLite (sqlx, Rust `db` 모듈) | Tauri command로 노출(§5). 프론트에서 SQL 직접 접근(tauri-plugin-sql) 미사용 |
 | 추론 엔진 | ComfyUI (헤드리스, localhost:8188) | 서브프로세스로 기동/관리 |
 | 학습 엔진 | kohya sd-scripts | 서브프로세스, stdout 파싱 |
 | 캡셔닝/에센스 | Florence-2 (MIT) + WD14 Tagger | Python 스크립트 |
