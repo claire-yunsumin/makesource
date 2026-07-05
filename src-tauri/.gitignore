@@ -1,0 +1,5 @@
+# Rust 빌드 산출물
+/target
+
+# Tauri가 생성하는 스키마/코드
+/gen
