@@ -181,6 +181,11 @@ impl Bootstrapper {
             "outputs",
             "training",
             "logs",
+            // ComfyUI --base-directory가 요구하는 폴더 (없으면 기동 크래시 — 실측)
+            "custom_nodes",
+            "input",
+            "output",
+            "user",
         ] {
             std::fs::create_dir_all(self.data_root.join(dir))?;
         }

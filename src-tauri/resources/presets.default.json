@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "presets": [
+    {
+      "id": "storybook",
+      "label": { "ko": "동화같은", "en": "Storybook" },
+      "version": 1,
+      "history": [],
+      "successCriteria": "파스텔톤 유지, 외곽선 없음, 배경 단순",
+      "prefix": "cinematic illustration of",
+      "suffix": "creating dreamlike atmosphere, soft pastel colors",
+      "negative": "text, watermark, photo-realistic",
+      "params": { "steps": 28, "cfg": 6.5, "width": 1024, "height": 1024 }
+    },
+    {
+      "id": "flat-vector",
+      "label": { "ko": "플랫 벡터", "en": "Flat Vector" },
+      "version": 1,
+      "history": [],
+      "successCriteria": "단순한 도형, 균일한 면 색, 그라데이션 없음",
+      "prefix": "flat vector illustration of",
+      "suffix": "minimal shapes, solid colors, clean composition",
+      "negative": "text, watermark, photo, 3d render, gradient",
+      "params": { "steps": 26, "cfg": 7.0, "width": 1024, "height": 1024 }
+    },
+    {
+      "id": "watercolor",
+      "label": { "ko": "수채화", "en": "Watercolor" },
+      "version": 1,
+      "history": [],
+      "successCriteria": "번짐 질감, 종이 여백감, 부드러운 경계",
+      "prefix": "delicate watercolor painting of",
+      "suffix": "soft washes, paper texture, gentle color bleeding",
+      "negative": "text, watermark, photo-realistic, harsh lines",
+      "params": { "steps": 30, "cfg": 6.0, "width": 1024, "height": 1024 }
+    },
+    {
+      "id": "3d-render",
+      "label": { "ko": "3D 렌더", "en": "3D Render" },
+      "version": 1,
+      "history": [],
+      "successCriteria": "부드러운 라이팅, 클레이 질감, 단색 배경",
+      "prefix": "cute 3d render of",
+      "suffix": "soft studio lighting, clay material, pastel background",
+      "negative": "text, watermark, photo, flat illustration",
+      "params": { "steps": 30, "cfg": 7.0, "width": 1024, "height": 1024 }
+    },
+    {
+      "id": "line-art",
+      "label": { "ko": "라인 아트", "en": "Line Art" },
+      "version": 1,
+      "history": [],
+      "successCriteria": "일정한 선 굵기, 채색 최소, 흰 배경",
+      "prefix": "clean line art drawing of",
+      "suffix": "consistent line weight, minimal shading, white background",
+      "negative": "text, watermark, photo, color fill, gradient",
+      "params": { "steps": 24, "cfg": 7.5, "width": 1024, "height": 1024 }
+    },
+    {
+      "id": "photo-real",
+      "label": { "ko": "실사풍", "en": "Photorealistic" },
+      "version": 1,
+      "history": [],
+      "successCriteria": "자연광 느낌, 과장 없는 색, 상업 사진 톤",
+      "prefix": "professional product photograph of",
+      "suffix": "natural lighting, shallow depth of field, commercial photography",
+      "negative": "text, watermark, illustration, cartoon, painting",
+      "params": { "steps": 32, "cfg": 6.0, "width": 1024, "height": 1024 }
+    }
+  ]
+}

@@ -5,6 +5,8 @@ description = "LocalBrush — 로컬 AI 브랜드 그래픽 생성기"
 authors = ["claire-yunsumin"]
 edition = "2021"
 rust-version = "1.77"
+# dev CLI(bootstrap_cli, generate_cli)가 있어 cargo run 기본 대상을 앱으로 고정
+default-run = "localbrush"
 
 # main.rs와 mobile 진입점이 공유하는 라이브러리 크레이트
 [lib]
@@ -21,9 +23,11 @@ serde_json = "1"
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "macros", "migrate"] }
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
 futures-util = "0.3"
-tokio = { version = "1", features = ["fs", "io-util", "process", "sync"] }
+tokio = { version = "1", features = ["fs", "io-util", "process", "sync", "rt-multi-thread", "macros"] }
+tokio-tungstenite = "0.24"
+chrono = "0.4"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
