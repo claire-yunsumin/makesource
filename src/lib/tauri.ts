@@ -16,3 +16,42 @@ export async function invokeCommand<T>(
 ): Promise<T> {
   return invoke<T>(command, args);
 }
+
+// ---- bootstrap (TAD §5, §7) ----
+
+export type ModelProfile = "standard" | "light";
+
+export type BootstrapStep =
+  | "check"
+  | "install_python"
+  | "clone_comfyui"
+  | "pip_install"
+  | "download_models"
+  | "warmup"
+  | "ready";
+
+export interface BootstrapStatus {
+  step: BootstrapStep;
+  progress: number;
+  ready: boolean;
+  suggestedProfile: ModelProfile;
+}
+
+/** `bootstrap://progress` 이벤트 페이로드 */
+export interface BootstrapProgressEvent {
+  step: BootstrapStep;
+  progress: number;
+  message: string;
+  error?: string;
+}
+
+export const BOOTSTRAP_PROGRESS_EVENT = "bootstrap://progress";
+
+export function bootstrapStatus(): Promise<BootstrapStatus> {
+  return invokeCommand<BootstrapStatus>("bootstrap_status");
+}
+
+/** 설치 시작. jobId 반환, 진행은 BOOTSTRAP_PROGRESS_EVENT 구독. */
+export function bootstrapRun(modelProfile: ModelProfile): Promise<string> {
+  return invokeCommand<string>("bootstrap_run", { modelProfile });
+}
