@@ -1,0 +1,24 @@
+[package]
+name = "localbrush"
+version = "0.1.0"
+description = "LocalBrush — 로컬 AI 브랜드 그래픽 생성기"
+authors = ["claire-yunsumin"]
+edition = "2021"
+rust-version = "1.77"
+
+# main.rs와 mobile 진입점이 공유하는 라이브러리 크레이트
+[lib]
+name = "localbrush_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# tauri의 커스텀 프로토콜 자산 임베딩용 (release 빌드)
+custom-protocol = ["tauri/custom-protocol"]
