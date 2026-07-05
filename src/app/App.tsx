@@ -1,15 +1,29 @@
+import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import Layout from "./Layout";
+import GenerateScreen from "../screens/generate/GenerateScreen";
+import GalleryScreen from "../screens/gallery/GalleryScreen";
+import StylesScreen from "../screens/styles/StylesScreen";
+import PresetsScreen from "../screens/presets/PresetsScreen";
+import SettingsScreen from "../screens/settings/SettingsScreen";
+
 /**
- * T0.1 스캐폴딩 확인용 플레이스홀더 화면.
- * 사이드바 + 5개 라우트 골격은 T0.2에서 구성한다.
+ * 라우팅 골격 (T0.2). 데스크톱 웹뷰에서 새로고침/딥링크 404를 피하려고 HashRouter 사용.
+ * 기본 진입은 생성 화면(메인, 04 §4.1).
  */
 export default function App() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-bg text-text">
-      <h1 className="text-2xl font-semibold">LocalBrush</h1>
-      <p className="text-text-sub">로컬 AI 브랜드 그래픽 생성기</p>
-      <span className="rounded-md bg-surface-2 px-3 py-1 text-sm text-text-sub">
-        ● 이 작업은 기기 안에서만 처리됩니다
-      </span>
-    </main>
+    <HashRouter>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<Navigate to="/generate" replace />} />
+          <Route path="/generate" element={<GenerateScreen />} />
+          <Route path="/gallery" element={<GalleryScreen />} />
+          <Route path="/styles" element={<StylesScreen />} />
+          <Route path="/presets" element={<PresetsScreen />} />
+          <Route path="/settings" element={<SettingsScreen />} />
+          <Route path="*" element={<Navigate to="/generate" replace />} />
+        </Route>
+      </Routes>
+    </HashRouter>
   );
 }

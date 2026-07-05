@@ -40,6 +40,10 @@ outputs/
 history/
 *.log
 
+# === Claude Code 로컬 설정 (launch.json만 공유, 나머지는 제외) ===
+.claude/settings.local.json
+.claude/worktrees/
+
 # === OS / 에디터 ===
 .DS_Store
 Thumbs.db
