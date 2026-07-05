@@ -16,6 +16,16 @@ use crate::prompt::presets::{find_preset, load_presets};
 use crate::prompt::workflow::{apply_slots, build_prompt_payload, WorkflowParams, SDXL_BASE};
 
 use super::client;
+use super::fallback::{self, Attempt};
+
+/// 진행 콜백으로 전달되는 갱신 (진행률 또는 사용자 고지 — T1.5 폴백).
+#[derive(Debug, Clone)]
+pub enum GenUpdate {
+    /// 0.0~1.0
+    Progress(f64),
+    /// 폴백 등 사용자 고지 문구 (04 §6 톤)
+    Notice(String),
+}
 
 /// generate 입력 (TAD §5).
 #[derive(Debug, Clone)]
@@ -36,6 +46,9 @@ pub struct GenProgress {
     pub job_id: String,
     /// 0.0~1.0
     pub progress: f64,
+    /// 폴백 등 사용자 고지 (T1.5, 04 §6 톤)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
 }
 
 /// gen://done 페이로드.
@@ -84,7 +97,25 @@ pub fn output_month_dir(now_ms: i64) -> String {
     format!("outputs/{}", dt.format("%Y-%m"))
 }
 
+/// 재시도 전 엔진 회복 대기 (프로세스 사망 → T1.2 자동 재시작 창구).
+async fn wait_engine_ready(http: &reqwest::Client, base_url: &str, max_secs: u64) {
+    for _ in 0..max_secs {
+        let ok = http
+            .get(format!("{base_url}/system_stats"))
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false);
+        if ok {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+}
+
 /// 완성 흐름 실행. 성공 시 GenDone 반환.
+/// OOM/프로세스 사망 시 ① 해상도 하향 ② SD1.5 폴백 순으로 자동 재시도 (TAD §6, T1.5).
 #[allow(clippy::too_many_arguments)]
 pub async fn run_generation(
     job_id: &str,
@@ -93,7 +124,7 @@ pub async fn run_generation(
     db: &Db,
     req: &GenerateRequest,
     cancel: &tokio::sync::watch::Receiver<bool>,
-    mut on_progress: impl FnMut(f64),
+    mut on_update: impl FnMut(GenUpdate),
 ) -> Result<GenDone, AppError> {
     // 1) 프리셋 로드 + 프롬프트 조립 (§4)
     let presets = load_presets(data_root)?;
@@ -109,31 +140,61 @@ pub async fn run_generation(
         .size
         .unwrap_or((preset.params.width, preset.params.height));
     let seed = req.seed.unwrap_or_else(random_seed);
+    let http = reqwest::Client::new();
 
-    // 2) 슬롯 치환 (§6) — 설치된 체크포인트로 override (light 폴백 대응)
-    let params = WorkflowParams {
-        prompt: prompt.clone(),
-        negative: negative.clone(),
-        seed,
-        steps: preset.params.steps,
-        cfg: preset.params.cfg,
+    // 2) 시도 루프: 원본 → (OOM 시) 해상도 하향 → SD1.5 폴백 (T1.5)
+    let mut attempt = Attempt {
         width,
         height,
-        batch: req.count.clamp(1, 4),
         checkpoint: resolve_checkpoint(data_root),
-        lora: None,
-        ipadapter: None,
+        stage: 0,
     };
-    let workflow = apply_slots(SDXL_BASE, &params)?;
-    let payload = build_prompt_payload(workflow, job_id);
+    let (images, attempt) = loop {
+        let params = WorkflowParams {
+            prompt: prompt.clone(),
+            negative: negative.clone(),
+            seed,
+            steps: preset.params.steps,
+            cfg: preset.params.cfg,
+            width: attempt.width,
+            height: attempt.height,
+            batch: req.count.clamp(1, 4),
+            checkpoint: attempt.checkpoint.clone(),
+            lora: None,
+            ipadapter: None,
+        };
+        let workflow = apply_slots(SDXL_BASE, &params)?;
+        let payload = build_prompt_payload(workflow, job_id);
 
-    // 3) 제출 + 진행 추적 (§6)
-    let http = reqwest::Client::new();
-    let prompt_id = client::post_prompt(&http, base_url, &payload).await?;
-    let images = client::track_progress(base_url, job_id, &prompt_id, cancel, |value, max| {
-        on_progress(value as f64 / max as f64);
-    })
-    .await?;
+        let result = async {
+            let prompt_id = client::post_prompt(&http, base_url, &payload).await?;
+            client::track_progress(base_url, job_id, &prompt_id, cancel, |value, max| {
+                on_update(GenUpdate::Progress(value as f64 / max as f64));
+            })
+            .await
+        }
+        .await;
+
+        match result {
+            Ok(images) => break (images, attempt),
+            Err(err) => {
+                // 취소는 폴백 대상 아님 — 그대로 전파
+                if err.code == "E_CANCELED" {
+                    return Err(err);
+                }
+                let sd15 = fallback::resolve_sd15(data_root);
+                match fallback::next_attempt(&attempt, &err, sd15.as_deref()) {
+                    Some((next, notice)) => {
+                        on_update(GenUpdate::Notice(notice));
+                        // 프로세스 사망이었다면 자동 재시작(T1.2)이 끝날 때까지 대기
+                        wait_engine_ready(&http, base_url, 30).await;
+                        attempt = next;
+                    }
+                    None => return Err(err),
+                }
+            }
+        }
+    };
 
     if images.is_empty() {
         return Err(AppError::new(
@@ -182,9 +243,10 @@ pub async fn run_generation(
             seed,
             steps: Some(preset.params.steps as i64),
             cfg: Some(preset.params.cfg),
-            width: Some(width as i64),
-            height: Some(height as i64),
-            model: params.checkpoint.clone(),
+            // 폴백이 있었다면 실제 사용된 값 기록 (T1.5)
+            width: Some(attempt.width as i64),
+            height: Some(attempt.height as i64),
+            model: attempt.checkpoint.clone(),
             favorite: false,
         };
         db.insert_generation(&generation).await?;

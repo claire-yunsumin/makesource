@@ -14,6 +14,7 @@ use tokio::sync::Mutex;
 use crate::error::AppError;
 
 pub mod client;
+pub mod fallback;
 pub mod generation;
 
 /// 엔진 실행 구성. data_root에서 파생 (TAD §3/§6).

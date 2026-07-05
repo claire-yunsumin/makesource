@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::db::Db;
-use crate::engine::generation::{run_generation, GenProgress, GenerateRequest};
+use crate::engine::generation::{run_generation, GenProgress, GenUpdate, GenerateRequest};
 use crate::error::AppError;
 use crate::paths;
 
@@ -77,12 +77,21 @@ pub async fn generate(
     let job_id2 = job_id.clone();
     tauri::async_runtime::spawn(async move {
         let db = app2.state::<Db>().inner().clone();
-        let emit_progress = |progress: f64| {
+        let mut last_progress = 0.0f64;
+        let emit_update = |update: GenUpdate| {
+            let (progress, notice) = match update {
+                GenUpdate::Progress(p) => {
+                    last_progress = p;
+                    (p, None)
+                }
+                GenUpdate::Notice(text) => (last_progress, Some(text)),
+            };
             let _ = app2.emit(
                 "gen://progress",
                 &GenProgress {
                     job_id: job_id2.clone(),
                     progress,
+                    notice,
                 },
             );
         };
@@ -93,7 +102,7 @@ pub async fn generate(
             &db,
             &req,
             &cancel_rx,
-            emit_progress,
+            emit_update,
         )
         .await;
 
