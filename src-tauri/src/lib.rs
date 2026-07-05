@@ -4,15 +4,17 @@
 use tauri::Manager;
 
 pub mod db;
+pub mod paths;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // CLAUDE.md 규칙 5: unwrap/expect는 테스트에서만. 여기선 명시적으로 처리.
     let result = tauri::Builder::default()
         .setup(|app| {
-            // 앱 데이터 폴더에 app.db 생성 + 마이그레이션 (TAD §3)
-            let db_path = app.path().app_data_dir()?.join("app.db");
-            let db = tauri::async_runtime::block_on(db::Db::connect(&db_path))?;
+            // 앱 데이터 루트(~/Library/Application Support/LocalBrush)에
+            // app.db 생성 + 마이그레이션 (TAD §3)
+            let data_root = paths::app_data_root(&app.path().data_dir()?);
+            let db = tauri::async_runtime::block_on(db::Db::connect(&paths::db_path(&data_root)))?;
             app.manage(db);
             Ok(())
         })
