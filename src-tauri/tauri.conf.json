@@ -22,6 +22,10 @@
       }
     ],
     "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$DATA/LocalBrush/**"]
+      },
       "csp": {
         "default-src": "'self'",
         "connect-src": "'self' ipc: http://ipc.localhost http://localhost:8188 http://127.0.0.1:8188 ws://localhost:8188 ws://127.0.0.1:8188 http://localhost:1420 ws://localhost:1420 ws://127.0.0.1:1420 https://huggingface.co https://*.huggingface.co https://github.com https://api.github.com https://*.githubusercontent.com",
