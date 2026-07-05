@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use localbrush_lib::db::Db;
-use localbrush_lib::engine::generation::{run_generation, GenerateRequest};
+use localbrush_lib::engine::generation::{run_generation, GenUpdate, GenerateRequest};
 use localbrush_lib::engine::{check_health, EngineConfig, EngineManager};
 use localbrush_lib::paths;
 
@@ -24,6 +24,15 @@ async fn main() {
         .position(|a| a == "--cancel-after")
         .and_then(|i| args.get(i + 1))
         .and_then(|s| s.parse().ok());
+    // --size WxH (예: --size 8192x8192 — OOM 폴백 시뮬레이션용)
+    let size: Option<(u32, u32)> = args
+        .iter()
+        .position(|a| a == "--size")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| {
+            let (w, h) = s.split_once('x')?;
+            Some((w.parse().ok()?, h.parse().ok()?))
+        });
 
     let Ok(home) = std::env::var("HOME") else {
         eprintln!("HOME 환경변수를 찾을 수 없습니다");
@@ -92,7 +101,7 @@ async fn main() {
         preset_id: "storybook".to_string(),
         keyword,
         count,
-        size: Some((1024, 1024)),
+        size: Some(size.unwrap_or((1024, 1024))),
         seed: None,
     };
     println!(
@@ -104,14 +113,17 @@ async fn main() {
     let last = Arc::new(std::sync::Mutex::new(-1i32));
     let result = run_generation(&job_id, &root, &config.base_url(), &db, &req, &cancel_rx, {
         let last = last.clone();
-        move |p| {
-            let pct = (p * 100.0) as i32;
-            if let Ok(mut l) = last.lock() {
-                if pct / 5 != *l / 5 {
-                    *l = pct;
-                    println!("진행 {pct}%");
+        move |update| match update {
+            GenUpdate::Progress(p) => {
+                let pct = (p * 100.0) as i32;
+                if let Ok(mut l) = last.lock() {
+                    if pct / 5 != *l / 5 {
+                        *l = pct;
+                        println!("진행 {pct}%");
+                    }
                 }
             }
+            GenUpdate::Notice(text) => println!("[폴백 고지] {text}"),
         }
     })
     .await;

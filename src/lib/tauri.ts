@@ -83,6 +83,8 @@ export interface GenerateArgs {
 export interface GenProgressEvent {
   jobId: string;
   progress: number;
+  /** 폴백 등 사용자 고지 (예: "메모리가 부족해 크기를 낮춰 다시 시도했어요.") */
+  notice?: string;
 }
 
 /** gen://done 페이로드 */
