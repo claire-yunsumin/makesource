@@ -13,9 +13,13 @@ use tokio::sync::Mutex;
 
 use crate::error::AppError;
 
+pub mod client;
+pub mod generation;
+
 /// 엔진 실행 구성. data_root에서 파생 (TAD §3/§6).
 #[derive(Debug, Clone)]
 pub struct EngineConfig {
+    pub data_root: PathBuf,
     pub python: PathBuf,
     pub main_py: PathBuf,
     pub port: u16,
@@ -26,13 +30,15 @@ impl EngineConfig {
 
     pub fn from_data_root(data_root: &Path) -> Self {
         Self {
+            data_root: data_root.to_path_buf(),
             python: data_root.join("runtime/venv/bin/python"),
             main_py: data_root.join("runtime/comfyui/main.py"),
             port: Self::DEFAULT_PORT,
         }
     }
 
-    /// ComfyUI 기동 인자 (TAD §6 명세 그대로).
+    /// ComfyUI 기동 인자 (TAD §6 명세 + --base-directory).
+    /// --base-directory로 모델(models/)·출력(output/)을 앱 데이터 루트 기준으로 통일 (TAD §3).
     pub fn spawn_spec(&self) -> SpawnSpec {
         SpawnSpec {
             program: self.python.clone(),
@@ -42,6 +48,8 @@ impl EngineConfig {
                 "127.0.0.1".into(),
                 "--port".into(),
                 self.port.to_string(),
+                "--base-directory".into(),
+                self.data_root.to_string_lossy().into_owned(),
             ],
         }
     }
@@ -58,6 +66,15 @@ impl EngineConfig {
     /// 부트스트랩 산출물이 있어야 기동 가능.
     pub fn is_installed(&self) -> bool {
         self.python.exists() && self.main_py.exists()
+    }
+
+    /// --base-directory 사용 시 ComfyUI가 요구하는 폴더들을 보장한다.
+    /// (custom_nodes가 없으면 prestartup에서 크래시 — 실측)
+    pub fn ensure_runtime_dirs(&self) -> std::io::Result<()> {
+        for dir in ["custom_nodes", "input", "output", "user"] {
+            std::fs::create_dir_all(self.data_root.join(dir))?;
+        }
+        Ok(())
     }
 }
 
@@ -89,22 +106,60 @@ struct Inner {
 pub struct EngineManager {
     spec: SpawnSpec,
     log_path: Option<PathBuf>,
+    /// 고아 엔진 정리용 pid 파일 (앱이 비정상 종료돼도 다음 기동 때 회수)
+    pid_path: Option<PathBuf>,
     inner: Arc<Mutex<Inner>>,
 }
 
 impl EngineManager {
     const RESTART_LIMIT: u8 = 1;
 
-    pub fn new(spec: SpawnSpec, log_path: Option<PathBuf>) -> Arc<Self> {
+    pub fn new(spec: SpawnSpec, log_path: Option<PathBuf>, pid_path: Option<PathBuf>) -> Arc<Self> {
         Arc::new(Self {
             spec,
             log_path,
+            pid_path,
             inner: Arc::new(Mutex::new(Inner {
                 child: None,
                 restarts_left: Self::RESTART_LIMIT,
                 shutting_down: false,
             })),
         })
+    }
+
+    /// 이전 실행이 남긴 고아 엔진을 pid 파일로 찾아 정리한다.
+    /// (앱이 SIGKILL 등으로 죽으면 RunEvent::Exit이 돌지 않아 엔진이 남을 수 있음 — 실측)
+    fn reap_orphan(&self) {
+        let Some(pid_path) = &self.pid_path else {
+            return;
+        };
+        let Ok(text) = std::fs::read_to_string(pid_path) else {
+            return;
+        };
+        if let Ok(pid) = text.trim().parse::<u32>() {
+            let alive = std::process::Command::new("/bin/kill")
+                .args(["-0", &pid.to_string()])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if alive {
+                self.log(&format!("고아 엔진 정리: pid={pid}"));
+                let _ = std::process::Command::new("/bin/kill")
+                    .args(["-9", &pid.to_string()])
+                    .status();
+            }
+        }
+        let _ = std::fs::remove_file(pid_path);
+    }
+
+    /// 현재 엔진 pid를 파일에 기록.
+    fn write_pid_file(&self, pid: Option<u32>) {
+        if let (Some(path), Some(pid)) = (&self.pid_path, pid) {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(path, pid.to_string());
+        }
     }
 
     /// logs/engine.log에 한 줄 기록.
@@ -166,9 +221,11 @@ impl EngineManager {
                     return Ok(()); // 이미 실행 중
                 }
             }
+            self.reap_orphan();
             inner.shutting_down = false;
             let child = self.spawn_child()?;
             self.log(&format!("engine 시작: pid={:?}", child.id()));
+            self.write_pid_file(child.id());
             inner.child = Some(child);
         }
         self.clone().watch();
@@ -210,6 +267,7 @@ impl EngineManager {
                 match self.spawn_child() {
                     Ok(child) => {
                         self.log(&format!("engine 재시작: pid={:?}", child.id()));
+                        self.write_pid_file(child.id());
                         inner.child = Some(child);
                         // 루프 계속 → 재시작한 프로세스도 감시
                     }
@@ -245,6 +303,9 @@ impl EngineManager {
             let _ = child.start_kill();
         }
         inner.child = None;
+        if let Some(path) = &self.pid_path {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 
@@ -309,7 +370,9 @@ mod tests {
                 "--listen",
                 "127.0.0.1",
                 "--port",
-                "8188"
+                "8188",
+                "--base-directory",
+                "/data/LocalBrush"
             ]
         );
         assert_eq!(cfg.health_url(), "http://127.0.0.1:8188/system_stats");
@@ -324,7 +387,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_is_idempotent_and_process_runs() {
-        let mgr = EngineManager::new(sleep_spec(), None);
+        let mgr = EngineManager::new(sleep_spec(), None, None);
         mgr.start().await.unwrap();
         assert!(mgr.is_process_running().await);
         let pid = mgr.pid().await;
@@ -340,7 +403,7 @@ mod tests {
     async fn crash_triggers_single_auto_restart() {
         let dir = tempfile::tempdir().unwrap();
         let log = dir.path().join("engine.log");
-        let mgr = EngineManager::new(sleep_spec(), Some(log.clone()));
+        let mgr = EngineManager::new(sleep_spec(), Some(log.clone()), None);
         mgr.start().await.unwrap();
         let pid1 = mgr.pid().await.unwrap();
 
@@ -388,8 +451,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn orphan_engine_is_reaped_on_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let pid_path = dir.path().join("engine.pid");
+
+        // 이전 실행이 남긴 "고아 엔진" 시뮬레이션
+        let mut orphan = std::process::Command::new("/bin/sleep")
+            .arg("300")
+            .spawn()
+            .unwrap();
+        std::fs::write(&pid_path, orphan.id().to_string()).unwrap();
+
+        let mgr = EngineManager::new(sleep_spec(), None, Some(pid_path.clone()));
+        mgr.start().await.unwrap();
+
+        // 고아는 회수되고, pid 파일은 새 엔진 pid로 갱신됨
+        let reaped = orphan.try_wait().map(|s| s.is_some()).unwrap_or(false);
+        assert!(reaped, "고아 엔진이 정리돼야 함");
+        let recorded: u32 = std::fs::read_to_string(&pid_path)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_eq!(Some(recorded), mgr.pid().await);
+
+        // shutdown 시 pid 파일 제거
+        mgr.shutdown().await;
+        assert!(!pid_path.exists());
+    }
+
+    #[tokio::test]
     async fn shutdown_prevents_restart() {
-        let mgr = EngineManager::new(sleep_spec(), None);
+        let mgr = EngineManager::new(sleep_spec(), None, None);
         mgr.start().await.unwrap();
         mgr.shutdown().await;
         tokio::time::sleep(Duration::from_millis(200)).await;

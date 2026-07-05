@@ -2,3 +2,4 @@
 
 pub mod bootstrap;
 pub mod engine;
+pub mod generate;

@@ -66,3 +66,48 @@ export interface EngineHealth {
 export function engineHealth(): Promise<EngineHealth> {
   return invokeCommand<EngineHealth>("engine_health");
 }
+
+// ---- generate (TAD §5) ----
+
+export interface GenerateArgs {
+  presetId: string;
+  styleId?: string;
+  keyword: string;
+  count?: number;
+  /** [width, height] */
+  size?: [number, number];
+  seed?: number;
+}
+
+/** gen://progress 페이로드 */
+export interface GenProgressEvent {
+  jobId: string;
+  progress: number;
+}
+
+/** gen://done 페이로드 */
+export interface GenDoneEvent {
+  jobId: string;
+  generationIds: string[];
+  /** 앱 데이터 루트 기준 상대 경로 */
+  imagePaths: string[];
+}
+
+/** gen://error 페이로드 */
+export interface GenErrorEvent {
+  jobId: string;
+  error: AppError;
+}
+
+export const GEN_PROGRESS_EVENT = "gen://progress";
+export const GEN_DONE_EVENT = "gen://done";
+export const GEN_ERROR_EVENT = "gen://error";
+
+/** 생성 시작. jobId 반환, 진행/완료/실패는 gen:// 이벤트 구독. */
+export function generate(args: GenerateArgs): Promise<string> {
+  return invokeCommand<string>("generate", { args });
+}
+
+export function generateCancel(jobId: string): Promise<void> {
+  return invokeCommand<void>("generate_cancel", { jobId });
+}

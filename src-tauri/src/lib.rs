@@ -22,12 +22,14 @@ pub fn run() {
             let db = tauri::async_runtime::block_on(db::Db::connect(&paths::db_path(&data_root)))?;
             app.manage(db);
             app.manage(commands::bootstrap::BootstrapJob::default());
+            app.manage(commands::generate::GenJobs::default());
 
             // 엔진 수퍼바이저 (TAD §6). 부트스트랩 완료 상태면 즉시 기동.
             let config = engine::EngineConfig::from_data_root(&data_root);
             let manager = engine::EngineManager::new(
                 config.spawn_spec(),
                 Some(data_root.join("logs/engine.log")),
+                Some(data_root.join("runtime/engine.pid")),
             );
             let engine_state = commands::engine::Engine {
                 manager: manager.clone(),
@@ -41,6 +43,9 @@ pub fn run() {
             )
             .is_ready();
             if bootstrap_ready && config.is_installed() {
+                if let Err(e) = config.ensure_runtime_dirs() {
+                    eprintln!("엔진 런타임 폴더 준비 실패: {e}");
+                }
                 tauri::async_runtime::block_on(async {
                     if let Err(e) = manager.start().await {
                         // 기동 실패는 치명적이지 않음 — engine_health가 false를 반환하고
@@ -55,6 +60,8 @@ pub fn run() {
             commands::bootstrap::bootstrap_status,
             commands::bootstrap::bootstrap_run,
             commands::engine::engine_health,
+            commands::generate::generate,
+            commands::generate::generate_cancel,
         ])
         .build(tauri::generate_context!());
 
