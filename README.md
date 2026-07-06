@@ -33,7 +33,13 @@
 
 Apple Silicon(M1 이상) macOS 전용입니다. Intel Mac에서는 코드 빌드는 되지만 이미지 생성(ComfyUI/MPS)이 동작하지 않습니다.
 
-Homebrew(`brew install --cask localbrush`) 배포는 준비 중입니다 — 현재는 위 dmg 직접 설치만 지원합니다.
+Homebrew로도 설치할 수 있습니다:
+
+```bash
+brew install --cask claire-yunsumin/localbrush/localbrush
+```
+
+([homebrew-localbrush](https://github.com/claire-yunsumin/homebrew-localbrush) tap. 릴리스 직후에는 캐스크의 버전·체크섬이 아직 최신이 아닐 수 있습니다 — 그럴 땐 위 dmg 직접 설치를 이용해주세요.)
 
 ## 개발 환경 세팅
 
