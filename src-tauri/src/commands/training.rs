@@ -327,24 +327,13 @@ pub async fn training_start(
 
     let job_id = uuid::Uuid::new_v4().to_string();
     let profile = load_profile(args.profile)?;
-    // 데이터셋 배치는 시작 전에 동기로 — 실패를 command 에러로 바로 돌려준다
-    let layout = prepare_kohya_layout(
-        &root,
-        &job_id,
-        std::path::Path::new(&args.dataset_dir),
-        profile.repeats,
-        &args.trigger_word,
-    )?;
+    // 저렴한 사전 검증만 command에서 — 데이터셋 복사(수백 MB 가능)는 spawn된
+    // 태스크에서 한다 (CLAUDE.md 규칙 4: 블로킹 command 금지)
+    let dataset_dir = std::path::PathBuf::from(&args.dataset_dir);
+    training::runner::count_dataset_images(&dataset_dir)?;
 
-    let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
-    {
-        let mut map = jobs
-            .0
-            .lock()
-            .map_err(|_| AppError::new("E_STATE", "내부 상태 잠금에 실패했어요."))?;
-        map.insert(job_id.clone(), cancel_tx);
-    }
-
+    // DB insert를 레지스트리 등록보다 먼저 — insert 실패 시 취소 핸들이
+    // 지도에 고아로 남는 누수 방지
     let now = chrono::Utc::now().timestamp_millis();
     let job_row = crate::db::models::TrainingJob {
         id: job_id.clone(),
@@ -361,6 +350,15 @@ pub async fn training_start(
         .await
         .map_err(|e| AppError::with_detail("E_DB", "학습 기록을 저장하지 못했어요.", e))?;
 
+    let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+    {
+        let mut map = jobs
+            .0
+            .lock()
+            .map_err(|_| AppError::new("E_STATE", "내부 상태 잠금에 실패했어요."))?;
+        map.insert(job_id.clone(), cancel_tx);
+    }
+
     let output_name = format!(
         "{}-{}",
         sanitize_trigger(&args.trigger_word),
@@ -372,57 +370,87 @@ pub async fn training_start(
     let trigger_word = args.trigger_word.clone();
     tauri::async_runtime::spawn(async move {
         let db = app2.state::<Db>().inner().clone();
-        // DB progress 기록은 1% 단위로 스로틀 (이벤트는 전부 push)
-        let mut last_db_percent = -1i64;
-        let on_update = |update: TrainUpdate| match update {
-            TrainUpdate::Progress {
-                progress,
-                eta_seconds,
-                loss,
-                epoch,
-            } => {
-                let _ = app2.emit(
-                    "train://progress",
-                    &TrainProgressEvent {
-                        job_id: job_id2.clone(),
-                        progress,
-                        eta_seconds,
-                        loss,
-                        epoch: epoch.map(|(c, t)| [c, t]),
-                    },
-                );
-                let percent = (progress * 100.0) as i64;
-                if percent != last_db_percent {
-                    last_db_percent = percent;
-                    let db2 = db.clone();
-                    let id = job_id2.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = db2
-                            .update_training_progress(&id, "training", progress)
-                            .await;
-                    });
+
+        // 업데이트 펌프: 이벤트 방출 + DB 기록을 한 소비자에서 순차 처리 —
+        // 업데이트마다 태스크를 spawn하면 순서 보장이 없어 늦은 progress
+        // 기록이 종료 상태(done/failed)를 'training'으로 되돌릴 수 있다
+        let (update_tx, mut update_rx) = tokio::sync::mpsc::unbounded_channel::<TrainUpdate>();
+        let pump = {
+            let app3 = app2.clone();
+            let db2 = db.clone();
+            let id = job_id2.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut last_db_percent = -1i64;
+                while let Some(update) = update_rx.recv().await {
+                    match update {
+                        TrainUpdate::Progress {
+                            progress,
+                            eta_seconds,
+                            loss,
+                            epoch,
+                        } => {
+                            let _ = app3.emit(
+                                "train://progress",
+                                &TrainProgressEvent {
+                                    job_id: id.clone(),
+                                    progress,
+                                    eta_seconds,
+                                    loss,
+                                    epoch: epoch.map(|(c, t)| [c, t]),
+                                },
+                            );
+                            // DB 기록은 1% 단위 스로틀 (이벤트는 전부 push)
+                            let percent = (progress * 100.0) as i64;
+                            if percent != last_db_percent {
+                                last_db_percent = percent;
+                                let _ = db2
+                                    .update_training_progress(
+                                        &id,
+                                        "training",
+                                        progress,
+                                        eta_seconds,
+                                    )
+                                    .await;
+                            }
+                        }
+                        TrainUpdate::Sample { image_path } => {
+                            let _ = app3.emit(
+                                "train://sample",
+                                &TrainSampleEvent {
+                                    job_id: id.clone(),
+                                    image_path,
+                                },
+                            );
+                        }
+                    }
                 }
-            }
-            TrainUpdate::Sample { image_path } => {
-                let _ = app2.emit(
-                    "train://sample",
-                    &TrainSampleEvent {
-                        job_id: job_id2.clone(),
-                        image_path,
-                    },
-                );
-            }
+            })
         };
 
-        let result = run_training(
-            &root,
-            &layout,
-            &profile,
-            &output_name,
-            &cancel_rx,
-            on_update,
-        )
-        .await;
+        // 데이터셋 복사(블로킹 IO)는 여기서 — jobId는 이미 반환됨
+        let result = match tauri::async_runtime::spawn_blocking({
+            let root = root.clone();
+            let job_id = job_id2.clone();
+            let profile = profile.clone();
+            let trigger = trigger_word.clone();
+            move || prepare_kohya_layout(&root, &job_id, &dataset_dir, &profile, &trigger)
+        })
+        .await
+        .map_err(|e| AppError::with_detail("E_TRAIN_SPAWN", "학습 준비에 실패했어요.", e))
+        .and_then(|r| r)
+        {
+            Ok(layout) => {
+                run_training(&root, &layout, &profile, &output_name, &cancel_rx, |u| {
+                    let _ = update_tx.send(u);
+                })
+                .await
+            }
+            Err(e) => Err(e),
+        };
+        // 펌프가 큐에 남은 업데이트를 모두 DB에 기록한 뒤에 종료 상태를 쓴다
+        drop(update_tx);
+        let _ = pump.await;
+
         let finished_at = chrono::Utc::now().timestamp_millis();
         match result {
             Ok(lora_path) => {

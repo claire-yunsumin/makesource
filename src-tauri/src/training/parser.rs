@@ -1,8 +1,10 @@
 //! kohya sd-scripts stdout/stderr 파서 (TAD §8 4, T6.3).
 //!
-//! tqdm 진행줄에서 step/total/loss/ETA를, 로그줄에서 epoch 경계와 체크포인트
-//! 저장 경로를 뽑는다. 외부 regex 의존 없이 수동 파싱 — kohya 출력 형식이
-//! 바뀌어도 조용히 None을 돌려주는(크래시 없는) 쪽으로 설계.
+//! tqdm 진행줄에서 step/total/loss/ETA를, 로그줄에서 epoch 경계를 뽑는다.
+//! 외부 regex 의존 없이 수동 파싱 — kohya 출력 형식이 바뀌어도 조용히
+//! None을 돌려주는(크래시 없는) 쪽으로 설계. 진행률은 `steps:` 접두가 붙은
+//! 전역 학습 바만 인정한다 — kohya는 latent 캐싱 등 다른 tqdm 바도
+//! 출력하므로 아무 `it/s` 줄이나 받으면 진행률이 100%↔0%로 널뛴다.
 
 /// 파싱된 학습 이벤트 한 건.
 #[derive(Debug, Clone, PartialEq)]
@@ -16,8 +18,6 @@ pub enum TrainEvent {
     },
     /// `epoch 2/4` 형태의 epoch 경계
     Epoch { current: u32, total: u32 },
-    /// 체크포인트/샘플 저장: `saving checkpoint: /path/x.safetensors`
-    Saved { path: String },
 }
 
 /// `MM:SS` 또는 `HH:MM:SS` → 초.
@@ -98,32 +98,12 @@ pub fn parse_line(line: &str) -> Option<TrainEvent> {
         }
     }
 
-    // 체크포인트/모델 저장 경로
-    for prefix in ["saving checkpoint:", "model saved.", "saving model:"] {
-        if let Some(idx) = lower.find(prefix) {
-            let path = line[idx + prefix.len()..].trim();
-            if !path.is_empty() {
-                return Some(TrainEvent::Saved {
-                    path: path.to_string(),
-                });
-            }
-        }
-    }
-
-    // tqdm 진행줄 ("steps:" 접두 또는 N/M [ 패턴)
-    if lower.contains("it/s") || lower.starts_with("steps") {
+    // 전역 학습 진행 바만 — latent 캐싱 등 다른 tqdm 바("caching latents: …
+    // it/s")를 진행률로 받으면 시작 직후 100%로 튀었다가 0%로 떨어진다
+    if lower.starts_with("steps") {
         return parse_progress(line);
     }
     None
-}
-
-/// tqdm은 캐리지 리턴(\r)으로 같은 줄을 덮어쓴다 — 청크를 논리 줄로 분해.
-pub fn split_carriage_lines(chunk: &str) -> Vec<&str> {
-    chunk
-        .split(['\r', '\n'])
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .collect()
 }
 
 #[cfg(test)]
@@ -192,12 +172,16 @@ mod tests {
     }
 
     #[test]
-    fn parses_checkpoint_save_path() {
+    fn foreign_tqdm_bars_are_not_progress() {
+        // kohya는 학습 전 latent 캐싱 등 자체 tqdm 바를 출력한다 — 이걸
+        // 진행률로 받으면 시작하자마자 100%가 됐다가 0%로 떨어진다
         assert_eq!(
-            parse_line("saving checkpoint: /data/training/j1/output/style-000002.safetensors"),
-            Some(TrainEvent::Saved {
-                path: "/data/training/j1/output/style-000002.safetensors".to_string()
-            })
+            parse_line("caching latents: 100%|██████| 30/30 [00:05<00:00, 6.2it/s]"),
+            None
+        );
+        assert_eq!(
+            parse_line("loading dataset: 50%|█| 5/10 [00:01<00:01, 4.1it/s]"),
+            None
         );
     }
 
@@ -207,18 +191,11 @@ mod tests {
             "",
             "prepare optimizer, data loader etc.",
             "use xformers for U-Net",
+            "saving checkpoint: /path/x.safetensors", // 산출물 경로는 output_name으로 결정적
             "steps: garbage without numbers [",
             "steps: 12/0 [00:01<00:02]", // total 0 — 나누기 방지
         ] {
             assert_eq!(parse_line(line), None, "{line:?}");
         }
-    }
-
-    #[test]
-    fn splits_carriage_return_overwrites_into_logical_lines() {
-        let chunk = "steps: 1/10 [00:01<00:09, 1it/s]\rsteps: 2/10 [00:02<00:08, 1it/s]\nepoch 1/2";
-        let lines = split_carriage_lines(chunk);
-        assert_eq!(lines.len(), 3);
-        assert!(lines[1].contains("2/10"));
     }
 }
