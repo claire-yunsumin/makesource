@@ -2,6 +2,17 @@
   "schemaVersion": 1,
   "presets": [
     {
+      "id": "default",
+      "label": { "ko": "기본", "en": "Default" },
+      "version": 1,
+      "history": [],
+      "successCriteria": "키워드 충실 반영, 과한 스타일 없음, 깔끔한 구도",
+      "prefix": "high quality digital illustration of",
+      "suffix": "clean composition, balanced colors, detailed",
+      "negative": "text, watermark, low quality, blurry",
+      "params": { "steps": 28, "cfg": 6.5, "width": 1024, "height": 1024 }
+    },
+    {
       "id": "storybook",
       "label": { "ko": "동화같은", "en": "Storybook" },
       "version": 1,
@@ -13,30 +24,30 @@
       "params": { "steps": 28, "cfg": 6.5, "width": 1024, "height": 1024 }
     },
     {
-      "id": "flat-vector",
-      "label": { "ko": "플랫 벡터", "en": "Flat Vector" },
+      "id": "infographic",
+      "label": { "ko": "인포그래픽", "en": "Infographic" },
       "version": 1,
       "history": [],
-      "successCriteria": "단순한 도형, 균일한 면 색, 그라데이션 없음",
-      "prefix": "flat vector illustration of",
-      "suffix": "minimal shapes, solid colors, clean composition",
-      "negative": "text, watermark, photo, 3d render, gradient",
+      "successCriteria": "정보 전달 중심의 단순 도해, 제한된 색 수, 밝은 단색 배경",
+      "prefix": "simple flat infographic illustration of",
+      "suffix": "clear visual hierarchy, limited color palette, geometric shapes, white background",
+      "negative": "text, watermark, photo, cluttered, realistic shading",
       "params": { "steps": 26, "cfg": 7.0, "width": 1024, "height": 1024 }
     },
     {
-      "id": "watercolor",
-      "label": { "ko": "수채화", "en": "Watercolor" },
+      "id": "icon",
+      "label": { "ko": "아이콘", "en": "Icon" },
       "version": 1,
       "history": [],
-      "successCriteria": "번짐 질감, 종이 여백감, 부드러운 경계",
-      "prefix": "delicate watercolor painting of",
-      "suffix": "soft washes, paper texture, gentle color bleeding",
-      "negative": "text, watermark, photo-realistic, harsh lines",
-      "params": { "steps": 30, "cfg": 6.0, "width": 1024, "height": 1024 }
+      "successCriteria": "단일 오브젝트 중앙 배치, 단순한 형태, 배경 단색·여백 충분",
+      "prefix": "single app icon of",
+      "suffix": "centered, simple rounded shapes, flat design, solid color background, generous margins",
+      "negative": "text, watermark, photo, multiple objects, complex background, realistic detail",
+      "params": { "steps": 24, "cfg": 7.5, "width": 1024, "height": 1024 }
     },
     {
-      "id": "3d-render",
-      "label": { "ko": "3D 렌더", "en": "3D Render" },
+      "id": "3d-object",
+      "label": { "ko": "3D 오브젝트", "en": "3D Object" },
       "version": 1,
       "history": [],
       "successCriteria": "부드러운 라이팅, 클레이 질감, 단색 배경",
@@ -46,26 +57,15 @@
       "params": { "steps": 30, "cfg": 7.0, "width": 1024, "height": 1024 }
     },
     {
-      "id": "line-art",
-      "label": { "ko": "라인 아트", "en": "Line Art" },
+      "id": "banner",
+      "label": { "ko": "배너", "en": "Banner" },
       "version": 1,
       "history": [],
-      "successCriteria": "일정한 선 굵기, 채색 최소, 흰 배경",
-      "prefix": "clean line art drawing of",
-      "suffix": "consistent line weight, minimal shading, white background",
-      "negative": "text, watermark, photo, color fill, gradient",
-      "params": { "steps": 24, "cfg": 7.5, "width": 1024, "height": 1024 }
-    },
-    {
-      "id": "photo-real",
-      "label": { "ko": "실사풍", "en": "Photorealistic" },
-      "version": 1,
-      "history": [],
-      "successCriteria": "자연광 느낌, 과장 없는 색, 상업 사진 톤",
-      "prefix": "professional product photograph of",
-      "suffix": "natural lighting, shallow depth of field, commercial photography",
-      "negative": "text, watermark, illustration, cartoon, painting",
-      "params": { "steps": 32, "cfg": 6.0, "width": 1024, "height": 1024 }
+      "successCriteria": "가로 구도, 한쪽에 카피 넣을 여백, 시선 끄는 색 대비",
+      "prefix": "wide promotional banner graphic of",
+      "suffix": "dynamic composition, empty copy space on one side, bold color contrast, modern gradient background",
+      "negative": "text, watermark, cluttered, centered composition",
+      "params": { "steps": 28, "cfg": 6.5, "width": 1216, "height": 832 }
     }
   ]
 }
