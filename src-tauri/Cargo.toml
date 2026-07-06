@@ -29,6 +29,8 @@ futures-util = "0.3"
 tokio = { version = "1", features = ["fs", "io-util", "process", "sync", "rt-multi-thread", "macros"] }
 tokio-tungstenite = "0.24"
 chrono = "0.4"
+# 내보내기 포맷 변환 (T3.2, F-4.2) — MIT/Apache
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

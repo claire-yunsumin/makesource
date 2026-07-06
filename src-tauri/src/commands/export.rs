@@ -1,6 +1,6 @@
 //! export_image (TAD §5, F-4.2).
 //!
-//! T2.4 범위: PNG 원본 복사 다운로드. jpg/webp 변환은 갤러리 상세(T3.2),
+//! png는 원본 복사, jpg/webp는 image 크레이트로 변환(T3.2).
 //! 투명 배경(배경 제거)은 T2.4b에서 추가한다.
 
 use std::path::{Path, PathBuf};
@@ -16,7 +16,7 @@ use crate::paths;
 #[serde(rename_all = "camelCase")]
 pub struct ExportArgs {
     pub id: String,
-    /// png | jpg | webp (T2.4는 png만)
+    /// png | jpg | webp
     pub format: String,
     pub transparent: Option<bool>,
     pub dest_dir: String,
@@ -54,16 +54,64 @@ pub fn unique_path(dest_dir: &Path, base: &str, ext: &str) -> PathBuf {
     dest_dir.join(format!("{base}-999.{ext}"))
 }
 
+/// png는 그대로 복사, jpg/webp는 변환해서 저장한다 (블로킹 — spawn_blocking에서 호출).
+fn write_converted(src: &Path, dest: &Path, format: &str) -> Result<(), AppError> {
+    if format == "png" {
+        std::fs::copy(src, dest).map_err(|e| {
+            AppError::with_detail(
+                "E_EXPORT_COPY",
+                "이미지를 저장하지 못했어요.",
+                format!("{} -> {}: {e}", src.display(), dest.display()),
+            )
+        })?;
+        return Ok(());
+    }
+    let img = image::open(src)
+        .map_err(|e| AppError::with_detail("E_IMAGE_DECODE", "원본 이미지를 읽지 못했어요.", e))?;
+    let encode_err = |e: image::ImageError| {
+        AppError::with_detail("E_IMAGE_ENCODE", "이미지를 변환하지 못했어요.", e)
+    };
+    match format {
+        "jpg" => {
+            // JPG는 알파 없음 — RGB로 변환 후 품질 90
+            let file = std::fs::File::create(dest)?;
+            let mut writer = std::io::BufWriter::new(file);
+            let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 90);
+            img.to_rgb8()
+                .write_with_encoder(encoder)
+                .map_err(encode_err)?;
+        }
+        "webp" => {
+            // image 크레이트의 WebP 인코더는 무손실
+            let file = std::fs::File::create(dest)?;
+            let writer = std::io::BufWriter::new(file);
+            let encoder = image::codecs::webp::WebPEncoder::new_lossless(writer);
+            img.to_rgba8()
+                .write_with_encoder(encoder)
+                .map_err(encode_err)?;
+        }
+        other => {
+            return Err(AppError::with_detail(
+                "E_FORMAT_UNSUPPORTED",
+                "PNG, JPG, WebP로만 저장할 수 있어요.",
+                other,
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn export_image(
     app: AppHandle,
     db: State<'_, Db>,
     args: ExportArgs,
 ) -> Result<String, AppError> {
-    if args.format != "png" {
-        return Err(AppError::new(
+    if !matches!(args.format.as_str(), "png" | "jpg" | "webp") {
+        return Err(AppError::with_detail(
             "E_FORMAT_UNSUPPORTED",
-            "지금은 PNG로만 저장할 수 있어요. JPG·WebP는 갤러리에서 곧 지원돼요.",
+            "PNG, JPG, WebP로만 저장할 수 있어요.",
+            args.format.clone(),
         ));
     }
     if args.transparent == Some(true) {
@@ -95,20 +143,20 @@ pub async fn export_image(
 
     let dest_dir = PathBuf::from(&args.dest_dir);
     std::fs::create_dir_all(&dest_dir)?;
-    // 파일명 규칙(기본값): {키워드}_{시드}.png — 규칙 설정 UI는 T7.1
+    // 파일명 규칙(기본값): {키워드}_{시드}.{포맷} — 규칙 설정 UI는 T7.1
     let base = format!(
         "{}_{}",
         sanitize_filename_part(gen.keyword_ko.as_deref().unwrap_or("image")),
         gen.seed
     );
-    let dest = unique_path(&dest_dir, &base, "png");
-    std::fs::copy(&src, &dest).map_err(|e| {
-        AppError::with_detail(
-            "E_EXPORT_COPY",
-            "이미지를 저장하지 못했어요.",
-            format!("{} -> {}: {e}", src.display(), dest.display()),
-        )
-    })?;
+    let dest = unique_path(&dest_dir, &base, &args.format);
+
+    // 이미지 디코드/인코드는 CPU 작업 — command 스레드를 막지 않는다
+    let format = args.format.clone();
+    let dest2 = dest.clone();
+    tauri::async_runtime::spawn_blocking(move || write_converted(&src, &dest2, &format))
+        .await
+        .map_err(|e| AppError::with_detail("E_EXPORT_TASK", "이미지를 저장하지 못했어요.", e))??;
     Ok(dest.to_string_lossy().into_owned())
 }
 
@@ -129,6 +177,25 @@ mod tests {
     fn sanitize_truncates_to_40_chars() {
         let long = "가".repeat(80);
         assert_eq!(sanitize_filename_part(&long).chars().count(), 40);
+    }
+
+    #[test]
+    fn write_converted_produces_decodable_jpg_and_webp() {
+        let dir = tempfile::tempdir().unwrap();
+        // 4x4 원본 PNG 생성
+        let src = dir.path().join("src.png");
+        let img = image::RgbaImage::from_pixel(4, 4, image::Rgba([200, 100, 50, 255]));
+        img.save(&src).unwrap();
+
+        for format in ["png", "jpg", "webp"] {
+            let dest = dir.path().join(format!("out.{format}"));
+            write_converted(&src, &dest, format).unwrap();
+            let decoded = image::open(&dest).unwrap();
+            assert_eq!(decoded.width(), 4, "{format} 왕복 실패");
+        }
+
+        let err = write_converted(&src, &dir.path().join("out.gif"), "gif").unwrap_err();
+        assert_eq!(err.code, "E_FORMAT_UNSUPPORTED");
     }
 
     #[test]

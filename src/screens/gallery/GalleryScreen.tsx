@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { dataDir } from "@tauri-apps/api/path";
+import { dataDir, downloadDir } from "@tauri-apps/api/path";
+import { useNavigate } from "react-router-dom";
+import Toast from "../../components/Toast";
 import { isAppError, type AppError } from "../../lib/appError";
+import { copyText } from "../../lib/clipboard";
 import { APP_DATA_DIR_NAME, joinImagePath } from "../../lib/imagePath";
-import { historyList, type Generation } from "../../lib/tauri";
+import { exportImage, historyList, historyToggleFavorite, type Generation } from "../../lib/tauri";
+import { useGenerateStore } from "../generate/store";
+import DetailModal, { type ExportFormat } from "./DetailModal";
+import { regenFormState } from "./detailMeta";
 import { cursorOf, isLastPage, mergePages } from "./galleryPaging";
 
 /**
- * 갤러리 (04 §4.2, T3.1): masonry 그리드 + 커서 기반 무한 스크롤.
- * 검색·필터는 T3.3, 상세 모달은 T3.2에서 추가한다.
+ * 갤러리 (04 §4.2): masonry 그리드 + 커서 기반 무한 스크롤(T3.1),
+ * 상세 모달(T3.2). 검색·필터는 T3.3에서 추가한다.
  */
 export default function GalleryScreen() {
   const [items, setItems] = useState<Generation[]>([]);
@@ -17,6 +23,12 @@ export default function GalleryScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<AppError | null>(null);
   const [dataRoot, setDataRoot] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    tone: "error" | "success";
+  } | null>(null);
+  const navigate = useNavigate();
 
   // 스크롤 감시 중 중복 요청 방지 (state 반영 전 공백 구간)
   const fetching = useRef(false);
@@ -76,6 +88,57 @@ export default function GalleryScreen() {
     return () => observer.disconnect();
   }, [hasMore, loadMore]);
 
+  // ---- 상세 모달 액션 (T3.2) ----
+
+  const handleToggleFavorite = useCallback(async (id: string) => {
+    const flip = (list: Generation[]) =>
+      list.map((g) => (g.id === id ? { ...g, favorite: !g.favorite } : g));
+    setItems(flip); // 낙관적
+    try {
+      await historyToggleFavorite(id);
+    } catch (e) {
+      setItems(flip); // 롤백
+      setToast({
+        message: isAppError(e) ? e.message : "즐겨찾기를 저장하지 못했어요.",
+        tone: "error",
+      });
+    }
+  }, []);
+
+  const handleExport = useCallback(async (id: string, format: ExportFormat) => {
+    try {
+      const dir = await downloadDir();
+      const path = await exportImage({ id, format, destDir: dir });
+      const fileName = path.split("/").pop() ?? path;
+      setToast({ message: `다운로드 폴더에 저장했어요 · ${fileName}`, tone: "success" });
+    } catch (e) {
+      setToast({
+        message: isAppError(e) ? e.message : "이미지를 저장하지 못했어요.",
+        tone: "error",
+      });
+    }
+  }, []);
+
+  const handleCopyMeta = useCallback(async (text: string) => {
+    const ok = await copyText(text);
+    setToast(
+      ok
+        ? { message: "메타 정보를 복사했어요.", tone: "success" }
+        : { message: "복사하지 못했어요.", tone: "error" },
+    );
+  }, []);
+
+  // 같은 설정으로 다시 생성: 생성 화면 폼을 채우고 이동 (04 §4.2)
+  const handleRegenerate = useCallback(
+    (item: Generation) => {
+      useGenerateStore.setState(regenFormState(item));
+      navigate("/generate");
+    },
+    [navigate],
+  );
+
+  const selected = selectedId !== null ? (items.find((g) => g.id === selectedId) ?? null) : null;
+
   if (initialLoaded && items.length === 0 && !error) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
@@ -113,9 +176,12 @@ export default function GalleryScreen() {
           const abs = dataRoot ? joinImagePath(dataRoot, item.thumbPath || item.imagePath) : null;
           const label = `${item.keywordKo ?? "이미지"}${item.presetId ? ` · ${item.presetId}` : ""}`;
           return (
-            <figure
+            <button
               key={item.id}
-              className="mb-4 break-inside-avoid overflow-hidden rounded-lg bg-surface-2 shadow-card"
+              type="button"
+              onClick={() => setSelectedId(item.id)}
+              aria-label={`${label} 상세 보기`}
+              className="ease-out-ui mb-4 block w-full break-inside-avoid overflow-hidden rounded-lg bg-surface-2 text-left shadow-card transition-opacity duration-150 hover:opacity-90"
             >
               {abs ? (
                 <img
@@ -134,15 +200,15 @@ export default function GalleryScreen() {
                   이미지를 불러오지 못했어요
                 </div>
               )}
-              <figcaption className="truncate px-2 py-1.5 text-xs text-text-sub">
+              <span className="block truncate px-2 py-1.5 text-xs text-text-sub">
                 {label}
                 {item.favorite && (
                   <span aria-label="즐겨찾기" className="ml-1 text-error">
                     ♥
                   </span>
                 )}
-              </figcaption>
-            </figure>
+              </span>
+            </button>
           );
         })}
       </div>
@@ -157,6 +223,19 @@ export default function GalleryScreen() {
       {initialLoaded && !hasMore && items.length > 0 && (
         <p className="py-4 text-center text-xs text-text-sub">전부 봤어요</p>
       )}
+
+      {selected && (
+        <DetailModal
+          item={selected}
+          dataRoot={dataRoot}
+          onClose={() => setSelectedId(null)}
+          onToggleFavorite={(id) => void handleToggleFavorite(id)}
+          onExport={(id, format) => void handleExport(id, format)}
+          onCopyMeta={(text) => void handleCopyMeta(text)}
+          onRegenerate={handleRegenerate}
+        />
+      )}
+      {toast && <Toast message={toast.message} tone={toast.tone} onClose={() => setToast(null)} />}
     </div>
   );
 }
