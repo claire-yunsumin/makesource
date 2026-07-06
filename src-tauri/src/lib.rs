@@ -62,6 +62,7 @@ pub fn run() {
             commands::engine::engine_health,
             commands::generate::generate,
             commands::generate::generate_cancel,
+            commands::presets::presets_get,
         ])
         .build(tauri::generate_context!());
 

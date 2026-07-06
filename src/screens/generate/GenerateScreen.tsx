@@ -10,17 +10,21 @@ import {
   GEN_PROGRESS_EVENT,
   generate,
   generateCancel,
+  presetsGet,
   type GenDoneEvent,
   type GenErrorEvent,
   type GenProgressEvent,
 } from "../../lib/tauri";
 import { parseSeed } from "./genSession";
-import { COUNT_OPTIONS, PRESET_TYPES, SIZE_OPTIONS } from "./presetTypes";
+import { COUNT_OPTIONS, SIZE_OPTIONS, presetLabel } from "./presetTypes";
 import ResultGrid from "./ResultGrid";
 import { useGenerateStore } from "./store";
 
 /** 생성 화면 (04 §4.1): 좌패널 320px + 결과 그리드, 상태 3종, ⌘↵ 생성 / Esc 취소. */
 export default function GenerateScreen() {
+  const presets = useGenerateStore((s) => s.presets);
+  const presetsLoading = useGenerateStore((s) => s.presetsLoading);
+  const presetsError = useGenerateStore((s) => s.presetsError);
   const presetId = useGenerateStore((s) => s.presetId);
   const keyword = useGenerateStore((s) => s.keyword);
   const count = useGenerateStore((s) => s.count);
@@ -39,6 +43,27 @@ export default function GenerateScreen() {
       .then((dir) => setDataRoot(`${dir.replace(/\/$/, "")}/${APP_DATA_DIR_NAME}`))
       .catch(() => setDataRoot(null));
   }, []);
+
+  // 이미지 타입 프리셋 로딩 (presets_get). 실패 시 재시도 버튼으로 이 콜백 재호출.
+  const loadPresets = useCallback(async () => {
+    useGenerateStore.setState({ presetsLoading: true, presetsError: null });
+    try {
+      const list = await presetsGet();
+      useGenerateStore.getState().setPresets(list);
+    } catch (e) {
+      useGenerateStore
+        .getState()
+        .setPresetsError(
+          isAppError(e)
+            ? e
+            : { code: "E_UNKNOWN", message: "프리셋을 불러오지 못했어요.", detail: String(e) },
+        );
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPresets();
+  }, [loadPresets]);
 
   // gen:// 이벤트 구독 — jobId 필터링은 genSession 순수 함수가 담당
   useEffect(() => {
@@ -115,8 +140,9 @@ export default function GenerateScreen() {
 
   const generating = session.phase === "generating";
   const seedInvalid = parseSeed(seedInput) === null;
-  const canSubmit = keyword.trim() !== "" && !seedInvalid && !generating;
-  const presetLabel = PRESET_TYPES.find((p) => p.id === presetId)?.label ?? presetId;
+  const canSubmit = keyword.trim() !== "" && presetId !== "" && !seedInvalid && !generating;
+  const selectedPreset = presets.find((p) => p.id === presetId);
+  const presetLabelText = selectedPreset ? presetLabel(selectedPreset) : presetId || "이미지";
 
   return (
     <div className="flex h-full">
@@ -153,27 +179,53 @@ export default function GenerateScreen() {
 
         <section>
           <h2 className="mb-2 text-xs font-medium text-text-sub">이미지 타입</h2>
-          <div className="grid grid-cols-2 gap-2">
-            {PRESET_TYPES.map((p) => {
-              const selected = p.id === presetId;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => useGenerateStore.getState().setPresetId(p.id)}
-                  className={`ease-out-ui rounded-md border px-3 py-2 text-left transition-colors duration-150 ${
-                    selected
-                      ? "border-primary bg-surface-2"
-                      : "border-border bg-surface hover:bg-surface-2"
-                  }`}
-                >
-                  <span className="block text-sm text-text">{p.label}</span>
-                  <span className="block text-xs text-text-sub">{p.hint}</span>
-                </button>
-              );
-            })}
-          </div>
+          {presetsLoading ? (
+            <div className="grid grid-cols-2 gap-2" aria-hidden>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-14 animate-pulse rounded-md border border-border bg-surface-2"
+                />
+              ))}
+            </div>
+          ) : presetsError ? (
+            <div className="rounded-md border border-error bg-surface-2 px-3 py-2 text-sm">
+              <p className="text-error">{presetsError.message}</p>
+              <button
+                type="button"
+                onClick={() => void loadPresets()}
+                className="mt-2 rounded-sm border border-border px-2 py-1 text-xs text-text-sub hover:bg-surface"
+              >
+                다시 시도
+              </button>
+            </div>
+          ) : presets.length === 0 ? (
+            <p className="text-xs text-text-sub">사용할 수 있는 프리셋이 없어요.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {presets.map((p) => {
+                const selected = p.id === presetId;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => useGenerateStore.getState().setPresetId(p.id)}
+                    className={`ease-out-ui rounded-md border px-3 py-2 text-left transition-colors duration-150 ${
+                      selected
+                        ? "border-primary bg-surface-2"
+                        : "border-border bg-surface hover:bg-surface-2"
+                    }`}
+                  >
+                    <span className="block text-sm text-text">{presetLabel(p)}</span>
+                    <span className="line-clamp-2 block text-xs text-text-sub">
+                      {p.successCriteria}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         <section>
@@ -294,7 +346,7 @@ export default function GenerateScreen() {
         <ResultGrid
           session={session}
           dataRoot={dataRoot}
-          altLabel={`${keyword.trim() || "이미지"} · ${presetLabel}`}
+          altLabel={`${keyword.trim() || "이미지"} · ${presetLabelText}`}
         />
       </section>
 

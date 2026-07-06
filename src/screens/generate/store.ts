@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { AppError } from "../../lib/appError";
-import type { GenDoneEvent, GenErrorEvent, GenProgressEvent } from "../../lib/tauri";
+import type { GenDoneEvent, GenErrorEvent, GenProgressEvent, Preset } from "../../lib/tauri";
 import {
   INITIAL_SESSION,
   applyDone,
@@ -12,10 +12,15 @@ import {
   startSession,
   type GenSession,
 } from "./genSession";
-import { DEFAULT_PRESET_ID } from "./presetTypes";
+import { resolvePresetId } from "./presetTypes";
 
 /** 생성 화면 로컬 스토어 (폼 입력 + 세션). 전이 로직은 genSession의 순수 함수에 위임. */
 interface GenerateState {
+  /** 로딩된 이미지 타입 프리셋 (presets_get) */
+  presets: Preset[];
+  presetsLoading: boolean;
+  presetsError: AppError | null;
+  /** 선택된 프리셋 id (프리셋 로딩 전에는 "") */
   presetId: string;
   keyword: string;
   count: number;
@@ -25,6 +30,8 @@ interface GenerateState {
   seedInput: string;
   session: GenSession;
 
+  setPresets: (presets: Preset[]) => void;
+  setPresetsError: (error: AppError | null) => void;
   setPresetId: (id: string) => void;
   setKeyword: (keyword: string) => void;
   setCount: (count: number) => void;
@@ -41,13 +48,25 @@ interface GenerateState {
 }
 
 export const useGenerateStore = create<GenerateState>((set) => ({
-  presetId: DEFAULT_PRESET_ID,
+  presets: [],
+  presetsLoading: true,
+  presetsError: null,
+  presetId: "",
   keyword: "",
   count: 4,
   sizeIndex: 0,
   seedInput: "",
   session: INITIAL_SESSION,
 
+  // 로딩 성공: 목록 저장 + 선택 정합화(기존 선택 유지, 없으면 첫 항목)
+  setPresets: (presets) =>
+    set((s) => ({
+      presets,
+      presetsLoading: false,
+      presetsError: null,
+      presetId: resolvePresetId(presets, s.presetId),
+    })),
+  setPresetsError: (presetsError) => set({ presetsError, presetsLoading: false }),
   setPresetId: (presetId) => set({ presetId }),
   setKeyword: (keyword) => set({ keyword }),
   setCount: (count) => set({ count }),
