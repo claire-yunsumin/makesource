@@ -67,6 +67,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::bootstrap::bootstrap_status,
             commands::bootstrap::bootstrap_run,
+            commands::bootstrap::bootstrap_open_log,
             commands::engine::engine_health,
             commands::generate::generate,
             commands::generate::generate_cancel,

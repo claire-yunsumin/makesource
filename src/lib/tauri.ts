@@ -56,6 +56,11 @@ export function bootstrapRun(modelProfile: ModelProfile): Promise<string> {
   return invokeCommand<string>("bootstrap_run", { modelProfile });
 }
 
+/** 설치 실패 시 logs/bootstrap.log를 기본 앱으로 연다 (04 §4.6 로그 열기). */
+export function bootstrapOpenLog(): Promise<void> {
+  return invokeCommand<void>("bootstrap_open_log");
+}
+
 // ---- engine (TAD §5, §6) ----
 
 export interface EngineHealth {

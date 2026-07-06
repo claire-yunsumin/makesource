@@ -57,6 +57,23 @@ pub async fn bootstrap_status(app: AppHandle) -> Result<BootstrapStatus, AppErro
     })
 }
 
+/// 설치 실패 시 `logs/bootstrap.log`를 기본 앱(Finder 연동)으로 연다 (TAD §7, 04 §4.6).
+#[tauri::command]
+pub async fn bootstrap_open_log(app: AppHandle) -> Result<(), AppError> {
+    let log_path = data_root(&app)?.join("logs").join("bootstrap.log");
+    if !log_path.exists() {
+        return Err(AppError::new(
+            "E_NO_LOG",
+            "아직 설치 로그가 없어요. 설치를 시작하면 만들어져요.",
+        ));
+    }
+    std::process::Command::new("/usr/bin/open")
+        .arg(&log_path)
+        .spawn()
+        .map_err(|e| AppError::with_detail("E_OPEN_LOG", "로그 파일을 열지 못했어요.", e))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn bootstrap_run(
     app: AppHandle,
