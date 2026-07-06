@@ -31,6 +31,8 @@ tokio-tungstenite = "0.24"
 chrono = "0.4"
 # 내보내기 포맷 변환 (T3.2, F-4.2) — MIT/Apache
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+# Finder 드래그 아웃 (T3.4, 04 §4.2) — MIT (CrabNebula)
+tauri-plugin-drag = "2.1.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

@@ -15,6 +15,8 @@ pub mod prompt;
 pub fn run() {
     // CLAUDE.md 규칙 5: unwrap/expect는 테스트에서만. 여기선 명시적으로 처리.
     let app = tauri::Builder::default()
+        // Finder 드래그 아웃 (T3.4)
+        .plugin(tauri_plugin_drag::init())
         .setup(|app| {
             // 앱 데이터 루트(~/Library/Application Support/LocalBrush)에
             // app.db 생성 + 마이그레이션 (TAD §3)
