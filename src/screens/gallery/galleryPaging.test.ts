@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Generation } from "../../lib/tauri";
-import { PAGE_SIZE, cursorOf, isLastPage, mergePages } from "./galleryPaging";
+import { PAGE_SIZE, buildHistoryArgs, cursorOf, isLastPage, mergePages } from "./galleryPaging";
 
 function gen(id: string, createdAt: number): Generation {
   return {
@@ -43,6 +43,21 @@ describe("mergePages", () => {
   it("빈 다음 페이지는 그대로", () => {
     const existing = [gen("a", 100)];
     expect(mergePages(existing, [])).toEqual(existing);
+  });
+});
+
+describe("buildHistoryArgs", () => {
+  it("빈 값은 키 자체를 보내지 않는다", () => {
+    expect(buildHistoryArgs(null, "", false)).toEqual({});
+    expect(buildHistoryArgs(null, "  ", false)).toEqual({});
+  });
+
+  it("커서·검색어(trim)·♥만을 조립한다", () => {
+    expect(buildHistoryArgs("90:b", " 통나무집 ", true)).toEqual({
+      cursor: "90:b",
+      query: "통나무집",
+      favorite: true,
+    });
   });
 });
 

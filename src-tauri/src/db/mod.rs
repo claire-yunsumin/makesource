@@ -22,6 +22,23 @@ pub struct Db {
     pool: SqlitePool,
 }
 
+/// history_list 검색·필터 조건 (T3.3, TAD §5).
+#[derive(Debug, Default, Clone)]
+pub struct HistoryFilter {
+    /// keyword_ko 또는 prompt_final 부분 일치
+    pub query: Option<String>,
+    pub style_id: Option<String>,
+    /// Some(true) = ♥만
+    pub favorite: Option<bool>,
+}
+
+/// LIKE 패턴 이스케이프 (%, _, \ — ESCAPE '\\'와 세트).
+fn like_escape(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 impl Db {
     /// 파일 기반 DB에 연결하고 마이그레이션을 적용한다.
     /// 부모 디렉터리가 없으면 생성하고, DB 파일이 없으면 만든다.
@@ -98,37 +115,44 @@ impl Db {
         .await
     }
 
-    /// 최신순 keyset 페이징 (T3.1, TAD §5 history_list).
+    /// 최신순 keyset 페이징 + 검색·필터 (T3.1/T3.3, TAD §5 history_list).
     /// cursor는 직전 페이지 마지막 행의 (created_at, id) — 그보다 오래된 행부터 반환한다.
     /// created_at이 같은 행은 id DESC로 안정 정렬.
     pub async fn list_generations_page(
         &self,
         limit: i64,
         cursor: Option<(i64, &str)>,
+        filter: &HistoryFilter,
     ) -> Result<Vec<Generation>, sqlx::Error> {
-        match cursor {
-            Some((created_at, id)) => {
-                sqlx::query_as::<_, Generation>(
-                    "SELECT * FROM generations
-                     WHERE created_at < ? OR (created_at = ? AND id < ?)
-                     ORDER BY created_at DESC, id DESC LIMIT ?",
-                )
-                .bind(created_at)
-                .bind(created_at)
-                .bind(id)
-                .bind(limit)
-                .fetch_all(&self.pool)
-                .await
-            }
-            None => {
-                sqlx::query_as::<_, Generation>(
-                    "SELECT * FROM generations ORDER BY created_at DESC, id DESC LIMIT ?",
-                )
-                .bind(limit)
-                .fetch_all(&self.pool)
-                .await
-            }
+        let mut qb = sqlx::QueryBuilder::new("SELECT * FROM generations WHERE 1=1");
+        if let Some((created_at, id)) = cursor {
+            qb.push(" AND (created_at < ")
+                .push_bind(created_at)
+                .push(" OR (created_at = ")
+                .push_bind(created_at)
+                .push(" AND id < ")
+                .push_bind(id.to_string())
+                .push("))");
         }
+        if let Some(query) = filter.query.as_deref().filter(|q| !q.trim().is_empty()) {
+            let pattern = format!("%{}%", like_escape(query.trim()));
+            qb.push(" AND (keyword_ko LIKE ")
+                .push_bind(pattern.clone())
+                .push(" ESCAPE '\\' OR prompt_final LIKE ")
+                .push_bind(pattern)
+                .push(" ESCAPE '\\')");
+        }
+        if let Some(style_id) = &filter.style_id {
+            qb.push(" AND style_id = ").push_bind(style_id.clone());
+        }
+        if filter.favorite == Some(true) {
+            qb.push(" AND favorite = 1");
+        }
+        qb.push(" ORDER BY created_at DESC, id DESC LIMIT ")
+            .push_bind(limit);
+        qb.build_query_as::<Generation>()
+            .fetch_all(&self.pool)
+            .await
     }
 
     pub async fn set_favorite(&self, id: &str, favorite: bool) -> Result<(), sqlx::Error> {
@@ -188,7 +212,7 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::models::{Generation, TrainingJob};
-    use super::Db;
+    use super::{like_escape, Db, HistoryFilter};
 
     fn sample_generation(id: &str, created_at: i64) -> Generation {
         Generation {
@@ -260,14 +284,21 @@ mod tests {
         }
 
         // 1페이지
-        let p1 = db.list_generations_page(2, None).await.unwrap();
+        let p1 = db
+            .list_generations_page(2, None, &HistoryFilter::default())
+            .await
+            .unwrap();
         let ids1: Vec<_> = p1.iter().map(|g| g.id.as_str()).collect();
         assert_eq!(ids1, vec!["c", "b2"]);
 
         // 2페이지: 커서 = 1페이지 마지막 (200, b2) — 같은 created_at의 b1이 빠지면 안 됨
         let last = p1.last().unwrap();
         let p2 = db
-            .list_generations_page(2, Some((last.created_at, &last.id)))
+            .list_generations_page(
+                2,
+                Some((last.created_at, &last.id)),
+                &HistoryFilter::default(),
+            )
             .await
             .unwrap();
         let ids2: Vec<_> = p2.iter().map(|g| g.id.as_str()).collect();
@@ -276,10 +307,95 @@ mod tests {
         // 끝: 빈 페이지
         let last2 = p2.last().unwrap();
         let p3 = db
-            .list_generations_page(2, Some((last2.created_at, &last2.id)))
+            .list_generations_page(
+                2,
+                Some((last2.created_at, &last2.id)),
+                &HistoryFilter::default(),
+            )
             .await
             .unwrap();
         assert!(p3.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_page_filters_query_favorite_style() {
+        let db = Db::connect_in_memory().await.unwrap();
+        let mut cabin = sample_generation("cabin", 300); // 통나무집 / log cabin
+        cabin.favorite = true;
+        db.insert_generation(&cabin).await.unwrap();
+
+        let mut robot = sample_generation("robot", 200);
+        robot.keyword_ko = Some("로봇".to_string());
+        robot.prompt_final = "cute 3d render of, robot".to_string();
+        robot.style_id = Some("style-1".to_string());
+        db.insert_generation(&robot).await.unwrap();
+
+        let all = HistoryFilter::default();
+        assert_eq!(
+            db.list_generations_page(10, None, &all)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+
+        // query: 키워드(한글) 또는 프롬프트(영문) 부분 일치
+        for (q, expect) in [("통나무", "cabin"), ("robot", "robot"), ("cabin", "cabin")] {
+            let f = HistoryFilter {
+                query: Some(q.to_string()),
+                ..Default::default()
+            };
+            let hits = db.list_generations_page(10, None, &f).await.unwrap();
+            assert_eq!(hits.len(), 1, "query={q}");
+            assert_eq!(hits[0].id, expect, "query={q}");
+        }
+
+        // LIKE 와일드카드가 이스케이프되는지 — '%'로는 전부 매칭되면 안 됨
+        let wild = HistoryFilter {
+            query: Some("%".to_string()),
+            ..Default::default()
+        };
+        assert!(db
+            .list_generations_page(10, None, &wild)
+            .await
+            .unwrap()
+            .is_empty());
+
+        // favorite
+        let fav = HistoryFilter {
+            favorite: Some(true),
+            ..Default::default()
+        };
+        let hits = db.list_generations_page(10, None, &fav).await.unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "cabin");
+
+        // style_id
+        let style = HistoryFilter {
+            style_id: Some("style-1".to_string()),
+            ..Default::default()
+        };
+        let hits = db.list_generations_page(10, None, &style).await.unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "robot");
+
+        // 필터 + 커서 조합 (favorite 안에서 keyset이 동작)
+        let mut cabin2 = sample_generation("cabin2", 100);
+        cabin2.favorite = true;
+        db.insert_generation(&cabin2).await.unwrap();
+        let p1 = db.list_generations_page(1, None, &fav).await.unwrap();
+        assert_eq!(p1[0].id, "cabin");
+        let p2 = db
+            .list_generations_page(1, Some((p1[0].created_at, &p1[0].id)), &fav)
+            .await
+            .unwrap();
+        assert_eq!(p2[0].id, "cabin2");
+    }
+
+    #[test]
+    fn like_escape_escapes_wildcards() {
+        assert_eq!(like_escape("100%_\\"), "100\\%\\_\\\\");
+        assert_eq!(like_escape("통나무집"), "통나무집");
     }
 
     #[tokio::test]

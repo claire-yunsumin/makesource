@@ -10,11 +10,11 @@ import { exportImage, historyList, historyToggleFavorite, type Generation } from
 import { useGenerateStore } from "../generate/store";
 import DetailModal, { type ExportFormat } from "./DetailModal";
 import { regenFormState } from "./detailMeta";
-import { cursorOf, isLastPage, mergePages } from "./galleryPaging";
+import { buildHistoryArgs, cursorOf, isLastPage, mergePages } from "./galleryPaging";
 
 /**
  * 갤러리 (04 §4.2): masonry 그리드 + 커서 기반 무한 스크롤(T3.1),
- * 상세 모달(T3.2). 검색·필터는 T3.3에서 추가한다.
+ * 상세 모달(T3.2), 검색·♥ 필터(T3.3). 스타일 필터 칩은 스타일 목록(M4)과 함께.
  */
 export default function GalleryScreen() {
   const [items, setItems] = useState<Generation[]>([]);
@@ -28,7 +28,16 @@ export default function GalleryScreen() {
     message: string;
     tone: "error" | "success";
   } | null>(null);
+  // 검색·필터 (T3.3) — query는 300ms 디바운스 후 요청에 반영
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [favoriteOnly, setFavoriteOnly] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   // 스크롤 감시 중 중복 요청 방지 (state 반영 전 공백 구간)
   const fetching = useRef(false);
@@ -38,6 +47,9 @@ export default function GalleryScreen() {
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+  // 필터가 바뀐 뒤 도착한 이전 조건의 응답을 무시하기 위한 세대 번호
+  const filtersRef = useRef({ query: "", favoriteOnly: false });
+  const requestSeq = useRef(0);
 
   useEffect(() => {
     dataDir()
@@ -48,15 +60,19 @@ export default function GalleryScreen() {
   const loadMore = useCallback(async () => {
     if (fetching.current) return;
     fetching.current = true;
+    const seq = requestSeq.current;
     setLoading(true);
     setError(null);
     try {
-      const current = itemsRef.current;
-      const cursor = cursorOf(current) ?? undefined;
-      const page = await historyList(cursor ? { cursor } : undefined);
+      const filters = filtersRef.current;
+      const page = await historyList(
+        buildHistoryArgs(cursorOf(itemsRef.current), filters.query, filters.favoriteOnly),
+      );
+      if (seq !== requestSeq.current) return; // 필터가 바뀐 뒤 도착 — 버림
       setItems((prev) => mergePages(prev, page));
       setHasMore(!isLastPage(page));
     } catch (e) {
+      if (seq !== requestSeq.current) return;
       setError(
         isAppError(e)
           ? e
@@ -64,15 +80,26 @@ export default function GalleryScreen() {
       );
     } finally {
       fetching.current = false;
-      setLoading(false);
-      setInitialLoaded(true);
+      if (seq === requestSeq.current) {
+        setLoading(false);
+        setInitialLoaded(true);
+      } else {
+        // 이 요청이 버려졌다면 최신 조건으로 다시 (딱 한 번 재귀)
+        void loadMore();
+      }
     }
   }, []);
 
-  // 첫 페이지
+  // 첫 페이지 + 필터 변경 시 리셋 후 재조회 (T3.3)
   useEffect(() => {
+    filtersRef.current = { query: debouncedQuery, favoriteOnly };
+    requestSeq.current += 1;
+    itemsRef.current = [];
+    setItems([]);
+    setHasMore(true);
+    setInitialLoaded(false);
     void loadMore();
-  }, [loadMore]);
+  }, [debouncedQuery, favoriteOnly, loadMore]);
 
   // 무한 스크롤: 하단 센티널 관찰
   useEffect(() => {
@@ -138,8 +165,10 @@ export default function GalleryScreen() {
   );
 
   const selected = selectedId !== null ? (items.find((g) => g.id === selectedId) ?? null) : null;
+  const hasFilters = debouncedQuery !== "" || favoriteOnly;
 
-  if (initialLoaded && items.length === 0 && !error) {
+  // 필터 없이도 비어 있으면 온보딩형 빈 상태 (검색 바 불필요)
+  if (initialLoaded && items.length === 0 && !error && !hasFilters) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
         <span aria-hidden className="text-4xl text-text-sub">
@@ -155,7 +184,34 @@ export default function GalleryScreen() {
 
   return (
     <div className="h-full overflow-y-auto p-6">
-      <h1 className="mb-4 text-base font-medium text-text">갤러리</h1>
+      {/* 상단: 검색 + 필터 칩 (04 §4.2, T3.3) */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <h1 className="text-base font-medium text-text">갤러리</h1>
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="키워드 검색"
+          aria-label="키워드 검색"
+          className="w-full max-w-xs rounded-md border border-border bg-surface-2 px-3 py-1.5 text-sm text-text placeholder:text-text-sub focus:border-primary focus:outline-none"
+        />
+        <button
+          type="button"
+          aria-pressed={favoriteOnly}
+          onClick={() => setFavoriteOnly((v) => !v)}
+          className={`ease-out-ui rounded-md border px-3 py-1.5 text-xs transition-colors duration-150 ${
+            favoriteOnly
+              ? "border-error text-error"
+              : "border-border text-text-sub hover:bg-surface-2"
+          }`}
+        >
+          ♥ 즐겨찾기만
+        </button>
+      </div>
+
+      {initialLoaded && items.length === 0 && !error && hasFilters && (
+        <p className="py-10 text-center text-sm text-text-sub">조건에 맞는 이미지가 없어요.</p>
+      )}
 
       {error && (
         <div role="alert" className="mb-4 rounded-md border border-error bg-surface-2 px-3 py-2">

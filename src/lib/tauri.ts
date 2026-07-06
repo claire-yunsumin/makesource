@@ -192,11 +192,16 @@ export interface Generation {
 }
 
 export interface HistoryListArgs {
+  /** 키워드(한글)·프롬프트(영문) 부분 일치 검색 */
+  query?: string;
+  styleId?: string;
+  /** true = ♥만 */
+  favorite?: boolean;
   /** 직전 페이지 마지막 항목의 커서 ("{createdAt}:{id}"). 없으면 첫 페이지 */
   cursor?: string;
 }
 
-/** 히스토리 최신순 페이지 (페이지 크기 40 — 백엔드 PAGE_SIZE). 검색·필터는 T3.3. */
+/** 히스토리 최신순 페이지 (페이지 크기 40 — 백엔드 PAGE_SIZE). */
 export function historyList(args?: HistoryListArgs): Promise<Generation[]> {
   return invokeCommand<Generation[]>("history_list", { args });
 }
