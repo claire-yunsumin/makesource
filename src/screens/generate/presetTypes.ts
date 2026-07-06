@@ -1,26 +1,26 @@
 /**
- * 이미지 타입(프리셋) 선택 카드 데이터.
+ * 이미지 타입(프리셋) 선택 UI 헬퍼 + 화면 상수.
  *
- * T2.2에서 presets_get 로딩 + 썸네일 카드로 대체 예정 — 그때까지
- * resources/presets.default.json의 id/라벨과 동기를 유지한다.
+ * 프리셋 자체는 presets_get(백엔드, resources/presets.default.json)에서 로딩한다.
+ * 여기서는 로딩된 프리셋을 카드로 표시할 때 쓰는 순수 헬퍼와, 백엔드와 무관한
+ * UI 상수(크기·장수)만 둔다.
  */
-export interface PresetType {
-  id: string;
-  label: string;
-  /** 카드 보조 설명 (프리셋 successCriteria 요약) */
-  hint: string;
+import type { Preset } from "../../lib/tauri";
+
+/** 프리셋 라벨을 현재 언어로. 해당 언어가 없으면 다른 언어 → id 순으로 폴백. */
+export function presetLabel(preset: Preset, lang: "ko" | "en" = "ko"): string {
+  const other = lang === "ko" ? "en" : "ko";
+  return preset.label?.[lang] || preset.label?.[other] || preset.id;
 }
 
-export const PRESET_TYPES: PresetType[] = [
-  { id: "storybook", label: "동화같은", hint: "파스텔톤 일러스트" },
-  { id: "flat-vector", label: "플랫 벡터", hint: "단순 도형·면 색" },
-  { id: "watercolor", label: "수채화", hint: "번짐 질감" },
-  { id: "3d-render", label: "3D 렌더", hint: "부드러운 입체" },
-  { id: "line-art", label: "라인 아트", hint: "깔끔한 선화" },
-  { id: "photo-real", label: "실사풍", hint: "사진 같은 질감" },
-];
-
-export const DEFAULT_PRESET_ID = PRESET_TYPES[0].id;
+/**
+ * 선택 상태를 프리셋 목록과 정합화한다.
+ * 현재 선택이 목록에 있으면 유지, 없으면 첫 프리셋(목록이 비면 "")으로.
+ */
+export function resolvePresetId(presets: Preset[], current: string): string {
+  if (presets.some((p) => p.id === current)) return current;
+  return presets[0]?.id ?? "";
+}
 
 /** 크기 3옵션 (04 §4.1) — SDXL 권장 해상도 버킷. */
 export const SIZE_OPTIONS: { label: string; size: [number, number] }[] = [

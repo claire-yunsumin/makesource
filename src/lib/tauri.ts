@@ -113,3 +113,33 @@ export function generate(args: GenerateArgs): Promise<string> {
 export function generateCancel(jobId: string): Promise<void> {
   return invokeCommand<void>("generate_cancel", { jobId });
 }
+
+// ---- presets (TAD §5, §3.2) ----
+
+/** 로컬화 라벨. 사용자 프리셋은 일부 언어만 채울 수 있어 partial. */
+export type PresetLabel = Partial<Record<"ko" | "en", string>>;
+
+export interface PresetParams {
+  steps: number;
+  cfg: number;
+  width: number;
+  height: number;
+}
+
+export interface Preset {
+  id: string;
+  label: PresetLabel;
+  version: number;
+  /** 이전 버전 스냅샷 (버전 관리는 T5.1) */
+  history: unknown[];
+  successCriteria: string;
+  prefix: string;
+  suffix: string;
+  negative: string;
+  params: PresetParams;
+}
+
+/** 프리셋 목록 로드 (사용자 presets.json 또는 내장 기본값). */
+export function presetsGet(): Promise<Preset[]> {
+  return invokeCommand<Preset[]>("presets_get");
+}
