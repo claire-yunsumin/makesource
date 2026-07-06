@@ -29,6 +29,23 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 4. **long-running 작업 패턴**: command는 jobId만 반환, 진행은 Tauri event(`gen://`, `train://`, `bootstrap://` 등)로 push. 블로킹 command 금지
 5. **에러 규약**: Rust는 AppError(code/message/detail)로 통일, 사용자 메시지는 한국어(04 §6 톤). unwrap/expect는 테스트 코드에서만
 
+## 세션 작업 루프 (태스크 하나를 끝까지)
+
+1. **읽기**: docs/05에서 태스크·AC 확인 → 해당 TAD·04 섹션 정독 → 관련 기존 코드(비슷한 기능의 command/화면/테스트) 훑기. 기존 패턴을 새로 만들지 말고 재사용
+2. **분기**: 항상 최신 main에서. 선행 PR 위에 스택하지 말 것 (squash merge라 rebase 지옥) — 의존되면 먼저 머지
+3. **구현**: 순수 로직 테스트 먼저 → 구현 → 검증. 시간이 걸리는 cargo 검증은 백그라운드로 돌리고 그동안 프론트 작업
+4. **같은 PR에서 동기화**: command 계약 변경 시 TAD §5 + `src/lib/tauri.ts`, 완료 태스크는 docs/05 체크, 되돌리기 비싼 결정은 docs/06에 D-xxx, 새 모델·의존성은 라이선스(MIT/Apache/BSD)와 다운로드 출처(HF만) 확인
+5. **PR 루프**: `gh pr create`(본문: 변경 내용 + AC 검증 결과 + 실기기 수동 확인 항목) → `gh pr checks --watch` → 그린이면 `gh pr merge --squash --delete-branch` → main pull 후 다음 태스크
+6. **막히면**: 제품 축을 바꾸는 결정(프리셋 구성, 계약 형태 등)은 임의로 정하지 말고 사용자에게 선택지를 제시
+
+검증 한 번에:
+```bash
+pnpm test && pnpm exec tsc --noEmit && pnpm lint
+cargo fmt --check --manifest-path src-tauri/Cargo.toml && \
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings && \
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
 ## 브랜치 전략 (트렁크 기반)
 
 - `main`: 항상 빌드 가능. 직접 push 금지 — 반드시 PR + CI 통과 후 **squash merge**
@@ -55,3 +72,6 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 - ComfyUI 워크플로 JSON의 노드 ID를 하드코딩하지 말 것 — `_slot` 키 기반 치환 사용 (TAD §6)
 - 모델/대용량 파일을 리포에 커밋 금지 (앱 데이터 폴더에서 다운로드·관리)
 - 히스토리 이미지 경로는 앱 데이터 루트 기준 상대 경로로 저장 (사용자가 저장 위치를 옮길 수 있음)
+- 같은 폴더에 대소문자만 다른 파일명 금지 (`EssenceWizard.tsx` + `essenceWizard.ts` → macOS/tsc 충돌). 컴포넌트는 PascalCase.tsx, 로직은 다른 이름의 camelCase.ts
+- Rust `const &str`(include_str! 템플릿 등)는 사용처마다 인라인됨 — 동일성 비교는 `std::ptr::eq`가 아니라 내용 비교(`==`)로
+- 이벤트 페이로드(gen://done 등) 필드 추가도 IPC 계약 변경 — `src/lib/tauri.ts` 타입을 같은 PR에서 갱신
