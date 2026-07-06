@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import Toast from "../../components/Toast";
+import { useLocale } from "../../lib/i18n";
 import {
   cacheClear,
   cacheStats,
@@ -9,6 +10,7 @@ import {
   settingsGet,
   settingsSave,
   type AppSettings,
+  type Language,
   type LicenseEntry,
   type ModelEntry,
 } from "../../lib/tauri";
@@ -42,6 +44,7 @@ export default function SettingsScreen() {
   const [licenses, setLicenses] = useState<LicenseEntry[]>([]);
   const [version, setVersion] = useState("");
   const [toast, setToast] = useState<{ message: string; tone: "error" | "success" } | null>(null);
+  const setLocale = useLocale((s) => s.setLocale);
 
   const load = useCallback(() => {
     modelsList()
@@ -80,6 +83,16 @@ export default function SettingsScreen() {
       setClearing(false);
       setConfirmClear(false);
     }
+  }
+
+  function onChangeLanguage(language: Language) {
+    if (!settings) return;
+    setSettings({ ...settings, language });
+    setLocale(language);
+    // 언어는 즉시 저장 — 안전 네거티브의 미저장 편집은 건드리지 않는다
+    settingsSave({ ...settings, safeNegative: savedNegative, language }).catch(() =>
+      setToast({ message: "설정을 저장하지 못했어요. 다시 시도해 주세요.", tone: "error" }),
+    );
   }
 
   async function onSaveSettings() {
@@ -180,6 +193,34 @@ export default function SettingsScreen() {
             </button>
           )}
         </div>
+      </Section>
+
+      <Section title="언어">
+        {settings === null ? (
+          <p className="text-sm text-text-sub">설정을 불러오지 못했어요.</p>
+        ) : (
+          <fieldset className="flex items-center gap-4">
+            <legend className="sr-only">UI 언어</legend>
+            {(
+              [
+                { value: "ko", label: "한국어" },
+                { value: "en", label: "English (일부 화면은 v1.0에서 번역돼요)" },
+              ] as { value: Language; label: string }[]
+            ).map((opt) => (
+              <label key={opt.value} className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="language"
+                  value={opt.value}
+                  checked={settings.language === opt.value}
+                  onChange={() => onChangeLanguage(opt.value)}
+                  className="accent-[var(--color-primary)]"
+                />
+                <span className="text-text">{opt.label}</span>
+              </label>
+            ))}
+          </fieldset>
+        )}
       </Section>
 
       <Section title="생성">

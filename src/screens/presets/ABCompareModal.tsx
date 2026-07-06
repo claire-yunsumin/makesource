@@ -52,6 +52,15 @@ export default function ABCompareModal({
 
   const busy = sessionA.phase === "generating" || sessionB.phase === "generating";
 
+  // 04 §7 키보드 접근: 생성 중이 아닐 때 Esc로 닫기 (다른 모달과 동일 규약)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onClose]);
+
   useEffect(() => {
     const unlistenPromises = [
       listen<GenProgressEvent>(GEN_PROGRESS_EVENT, (e) => {
@@ -99,7 +108,12 @@ export default function ABCompareModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="flex max-h-full w-full max-w-3xl flex-col gap-4 overflow-y-auto rounded-lg bg-surface p-6 shadow-card">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="A/B 비교"
+        className="flex max-h-full w-full max-w-3xl flex-col gap-4 overflow-y-auto rounded-lg bg-surface p-6 shadow-card"
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-base font-medium text-text">A/B 비교</h2>
           <button
