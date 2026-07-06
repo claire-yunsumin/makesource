@@ -1,11 +1,10 @@
 //! history_list / history_toggle_favorite (TAD §5).
-//! 검색·필터(query/styleId/favorite 인자)는 T3.3에서 확장한다.
 
 use serde::Deserialize;
 use tauri::State;
 
 use crate::db::models::Generation;
-use crate::db::Db;
+use crate::db::{Db, HistoryFilter};
 use crate::error::AppError;
 
 /// 기본·최대 페이지 크기 (무한 스크롤 한 페이지).
@@ -14,6 +13,11 @@ const PAGE_SIZE: i64 = 40;
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryListArgs {
+    /// 키워드(한글)·프롬프트(영문) 부분 일치 검색 (T3.3)
+    pub query: Option<String>,
+    pub style_id: Option<String>,
+    /// true = ♥만
+    pub favorite: Option<bool>,
     /// 직전 페이지 마지막 항목의 커서 (`"{createdAt}:{id}"`). 없으면 첫 페이지.
     pub cursor: Option<String>,
 }
@@ -40,7 +44,12 @@ pub async fn history_list(
         })?),
         None => None,
     };
-    db.list_generations_page(PAGE_SIZE, cursor)
+    let filter = HistoryFilter {
+        query: args.query,
+        style_id: args.style_id,
+        favorite: args.favorite,
+    };
+    db.list_generations_page(PAGE_SIZE, cursor, &filter)
         .await
         .map_err(|e| AppError::with_detail("E_DB", "히스토리를 읽지 못했어요.", e))
 }

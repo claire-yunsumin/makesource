@@ -23,3 +23,16 @@ export function mergePages(existing: Generation[], next: Generation[]): Generati
 export function isLastPage(page: Generation[]): boolean {
   return page.length < PAGE_SIZE;
 }
+
+/** history_list 요청 인자 조립 — 빈 값은 보내지 않는다 (T3.3). */
+export function buildHistoryArgs(
+  cursor: string | null,
+  query: string,
+  favoriteOnly: boolean,
+): { cursor?: string; query?: string; favorite?: boolean } {
+  return {
+    ...(cursor ? { cursor } : {}),
+    ...(query.trim() !== "" ? { query: query.trim() } : {}),
+    ...(favoriteOnly ? { favorite: true } : {}),
+  };
+}
