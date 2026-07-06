@@ -265,7 +265,7 @@ impl Bootstrapper {
         .await
     }
 
-    /// pip_install: ComfyUI requirements를 venv에 설치 (uv pip).
+    /// pip_install: ComfyUI requirements + 앱 파이썬 도구를 venv에 설치 (uv pip).
     async fn step_pip_install(&self) -> Result<(), AppError> {
         let req = self.comfyui_dir().join("requirements.txt");
         self.run_cmd(
@@ -275,6 +275,20 @@ impl Bootstrapper {
                 "install",
                 "-r",
                 &req.to_string_lossy(),
+                "--python",
+                &self.venv_python().to_string_lossy(),
+            ],
+            None,
+        )
+        .await?;
+        // 한→영 변환(T2.3b, D-008) — 모델은 download_models 단계에서 받고
+        // translate.py가 첫 사용 시 설치한다
+        self.run_cmd(
+            &self.uv_bin(),
+            &[
+                "pip",
+                "install",
+                "argostranslate",
                 "--python",
                 &self.venv_python().to_string_lossy(),
             ],

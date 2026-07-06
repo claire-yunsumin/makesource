@@ -134,8 +134,18 @@ fn ensure_script(data_root: &Path) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
-/// Argos 서브프로세스 실행 (§4 ②).
-async fn run_argos(python: &Path, script: &Path, text: &str) -> Result<String, String> {
+/// 부트스트랩이 받아둔 ko→en 모델 파일 경로 (bootstrap/models.rs dest_rel과 동기).
+fn argos_model_path(data_root: &Path) -> PathBuf {
+    data_root.join("models/argos/translate-ko_en.argosmodel")
+}
+
+/// Argos 서브프로세스 실행 (§4 ②). model_path는 미설치 시 지연 설치용 (T2.3b).
+async fn run_argos(
+    python: &Path,
+    script: &Path,
+    text: &str,
+    model_path: &Path,
+) -> Result<String, String> {
     use tokio::io::AsyncWriteExt;
 
     let mut child = tokio::process::Command::new(python)
@@ -146,7 +156,12 @@ async fn run_argos(python: &Path, script: &Path, text: &str) -> Result<String, S
         .spawn()
         .map_err(|e| format!("실행 실패: {e}"))?;
 
-    let input = serde_json::json!({ "text": text }).to_string() + "\n";
+    let input = serde_json::json!({
+        "text": text,
+        "modelPath": model_path.to_string_lossy(),
+    })
+    .to_string()
+        + "\n";
     if let Some(stdin) = child.stdin.as_mut() {
         stdin
             .write_all(input.as_bytes())
@@ -193,16 +208,18 @@ pub async fn translate_keyword(data_root: &Path, keyword: &str) -> Translation {
     let python = venv_python(data_root);
     if python.exists() {
         match ensure_script(data_root) {
-            Ok(script) => match run_argos(&python, &script, trimmed).await {
-                Ok(translated) => {
-                    return Translation {
-                        translated,
-                        source: TranslationSource::Argos,
-                        warning: None,
-                    };
+            Ok(script) => {
+                match run_argos(&python, &script, trimmed, &argos_model_path(data_root)).await {
+                    Ok(translated) => {
+                        return Translation {
+                            translated,
+                            source: TranslationSource::Argos,
+                            warning: None,
+                        };
+                    }
+                    Err(detail) => eprintln!("Argos 변환 실패: {detail}"),
                 }
-                Err(detail) => eprintln!("Argos 변환 실패: {detail}"),
-            },
+            }
             Err(e) => eprintln!("translate.py 기록 실패: {e}"),
         }
     }
