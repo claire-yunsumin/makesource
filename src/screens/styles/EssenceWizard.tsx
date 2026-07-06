@@ -105,7 +105,11 @@ export default function EssenceWizard({ onClose, onSaved }: EssenceWizardProps) 
       setError(
         isAppError(e)
           ? e
-          : { code: "E_UNKNOWN", message: "스타일을 저장하지 못했어요.", detail: String(e) },
+          : {
+              code: "E_UNKNOWN",
+              message: "스타일을 저장하지 못했어요. 다시 시도해 주세요.",
+              detail: String(e),
+            },
       );
       setSaving(false);
     }

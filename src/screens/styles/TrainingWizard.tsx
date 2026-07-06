@@ -137,7 +137,11 @@ export default function TrainingWizard({ onClose, onSaved }: TrainingWizardProps
       setError(
         isAppError(e)
           ? e
-          : { code: "E_UNKNOWN", message: "캡션을 저장하지 못했어요.", detail: String(e) },
+          : {
+              code: "E_UNKNOWN",
+              message: "캡션을 저장하지 못했어요. 다시 시도해 주세요.",
+              detail: String(e),
+            },
       );
     } finally {
       setSaving(false);
@@ -179,7 +183,7 @@ export default function TrainingWizard({ onClose, onSaved }: TrainingWizardProps
           ? e
           : {
               code: "E_UNKNOWN",
-              message: "학습 도구 설치를 시작하지 못했어요.",
+              message: "학습 도구 설치를 시작하지 못했어요. 다시 시도해 주세요.",
               detail: String(e),
             },
       );
@@ -271,7 +275,11 @@ export default function TrainingWizard({ onClose, onSaved }: TrainingWizardProps
       setError(
         isAppError(e)
           ? e
-          : { code: "E_UNKNOWN", message: "학습을 시작하지 못했어요.", detail: String(e) },
+          : {
+              code: "E_UNKNOWN",
+              message: "학습을 시작하지 못했어요. 다시 시도해 주세요.",
+              detail: String(e),
+            },
       );
     }
   }, [datasetDir, name, triggerWord, profile]);

@@ -121,7 +121,7 @@ mod tests {
     fn oom_exec_error() -> AppError {
         AppError::with_detail(
             "E_ENGINE_EXEC",
-            "이미지를 만들다 문제가 생겼어요.",
+            "이미지를 만들다가 문제가 생겼어요.",
             "MPS backend out of memory (MPS allocated: 8.00 GB)",
         )
     }

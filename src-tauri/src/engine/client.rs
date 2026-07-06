@@ -161,7 +161,7 @@ pub async fn track_progress(
                     WsEvent::ExecutionError { message } => {
                         return Err(AppError::with_detail(
                             "E_ENGINE_EXEC",
-                            "이미지를 만들다 문제가 생겼어요.",
+                            "이미지를 만들다가 문제가 생겼어요.",
                             message,
                         ));
                     }

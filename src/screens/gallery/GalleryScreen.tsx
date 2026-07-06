@@ -127,7 +127,7 @@ export default function GalleryScreen() {
     } catch (e) {
       setItems(flip); // 롤백
       setToast({
-        message: isAppError(e) ? e.message : "즐겨찾기를 저장하지 못했어요.",
+        message: isAppError(e) ? e.message : "즐겨찾기를 저장하지 못했어요. 다시 시도해 주세요.",
         tone: "error",
       });
     }
@@ -148,7 +148,7 @@ export default function GalleryScreen() {
         setToast({ message: `다운로드 폴더에 저장했어요 · ${fileName}`, tone: "success" });
       } catch (e) {
         setToast({
-          message: isAppError(e) ? e.message : "이미지를 저장하지 못했어요.",
+          message: isAppError(e) ? e.message : "이미지를 저장하지 못했어요. 다시 시도해 주세요.",
           tone: "error",
         });
       }
@@ -161,7 +161,7 @@ export default function GalleryScreen() {
     setToast(
       ok
         ? { message: "메타 정보를 복사했어요.", tone: "success" }
-        : { message: "복사하지 못했어요.", tone: "error" },
+        : { message: "복사하지 못했어요. 다시 시도해 주세요.", tone: "error" },
     );
   }, []);
 
@@ -181,7 +181,7 @@ export default function GalleryScreen() {
       const abs = dataRoot ? joinImagePath(dataRoot, item.imagePath) : null;
       if (!abs) return;
       startDrag({ item: [abs], icon: abs }).catch(() => {
-        setToast({ message: "드래그를 시작하지 못했어요.", tone: "error" });
+        setToast({ message: "드래그를 시작하지 못했어요. 다시 시도해 주세요.", tone: "error" });
       });
     },
     [dataRoot],
