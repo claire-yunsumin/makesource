@@ -175,7 +175,15 @@ export default function StylesScreen() {
           }}
         />
       )}
-      {trainingWizardOpen && <TrainingWizard onClose={() => setTrainingWizardOpen(false)} />}
+      {trainingWizardOpen && (
+        <TrainingWizard
+          onClose={() => setTrainingWizardOpen(false)}
+          onSaved={() => {
+            void load();
+            setToast({ message: "학습한 스타일을 등록했어요.", tone: "success" });
+          }}
+        />
+      )}
       {toast && <Toast message={toast.message} tone={toast.tone} onClose={() => setToast(null)} />}
     </div>
   );
