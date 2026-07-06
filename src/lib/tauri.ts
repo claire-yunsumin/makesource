@@ -168,6 +168,20 @@ export function presetsSave(preset: Preset): Promise<void> {
   return invokeCommand<void>("presets_save", { preset });
 }
 
+/** 현재 프리셋 전체를 destPath(절대 경로, 저장 다이얼로그로 선택)로 내보낸다. */
+export function presetsExport(destPath: string): Promise<void> {
+  return invokeCommand<void>("presets_export", { destPath });
+}
+
+/**
+ * srcPath(절대 경로, 열기 다이얼로그로 선택)의 파일을 가져온다.
+ * schemaVersion이 안 맞으면 아무것도 바꾸지 않고 실패한다. 성공하면
+ * presets_save와 같은 버전 관리를 타 병합된 최신 프리셋 목록을 반환한다.
+ */
+export function presetsImport(srcPath: string): Promise<Preset[]> {
+  return invokeCommand<Preset[]>("presets_import", { srcPath });
+}
+
 // ---- translate (TAD §4, §5) ----
 
 /**

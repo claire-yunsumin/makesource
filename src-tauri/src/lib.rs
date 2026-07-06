@@ -18,6 +18,8 @@ pub fn run() {
     let app = tauri::Builder::default()
         // Finder 드래그 아웃 (T3.4)
         .plugin(tauri_plugin_drag::init())
+        // 프리셋 내보내기/가져오기 파일 선택 다이얼로그 (T5.3)
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 앱 데이터 루트(~/Library/Application Support/LocalBrush)에
             // app.db 생성 + 마이그레이션 (TAD §3)
@@ -67,6 +69,8 @@ pub fn run() {
             commands::generate::generate_cancel,
             commands::presets::presets_get,
             commands::presets::presets_save,
+            commands::presets::presets_export,
+            commands::presets::presets_import,
             commands::translate::translate_keyword,
             commands::history::history_list,
             commands::history::history_toggle_favorite,
