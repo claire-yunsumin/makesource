@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { dataDir } from "@tauri-apps/api/path";
+import { dataDir, downloadDir } from "@tauri-apps/api/path";
 import Toast from "../../components/Toast";
 import { isAppError } from "../../lib/appError";
 import { APP_DATA_DIR_NAME } from "../../lib/imagePath";
@@ -8,8 +8,10 @@ import {
   GEN_DONE_EVENT,
   GEN_ERROR_EVENT,
   GEN_PROGRESS_EVENT,
+  exportImage,
   generate,
   generateCancel,
+  historyToggleFavorite,
   presetsGet,
   translateKeyword,
   type GenDoneEvent,
@@ -36,7 +38,10 @@ export default function GenerateScreen() {
   const session = useGenerateStore((s) => s.session);
 
   const [dataRoot, setDataRoot] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    tone: "error" | "warn" | "success";
+  } | null>(null);
   // 고급 패널의 한→영 변환 미리보기 (디바운스, T2.3)
   const [translation, setTranslation] = useState<Translation | null>(null);
   // ⌘↵ 연타로 invoke가 겹치지 않게 하는 가드 (start 반영 전 공백 구간)
@@ -157,6 +162,46 @@ export default function GenerateScreen() {
     }
   }, []);
 
+  // 셀 액션 (T2.4): ♥ 낙관적 토글 + 실패 롤백
+  const handleToggleFavorite = useCallback(async (id: string) => {
+    useGenerateStore.getState().toggleFavorite(id);
+    try {
+      await historyToggleFavorite(id);
+    } catch (e) {
+      useGenerateStore.getState().toggleFavorite(id); // 롤백
+      setToast({
+        message: isAppError(e) ? e.message : "즐겨찾기를 저장하지 못했어요.",
+        tone: "error",
+      });
+    }
+  }, []);
+
+  // 셀 액션 (T2.4): PNG 다운로드 → ~/Downloads
+  const handleDownload = useCallback(async (id: string) => {
+    try {
+      const dir = await downloadDir();
+      const path = await exportImage({ id, format: "png", destDir: dir });
+      const fileName = path.split("/").pop() ?? path;
+      setToast({ message: `다운로드 폴더에 저장했어요 · ${fileName}`, tone: "success" });
+    } catch (e) {
+      setToast({
+        message: isAppError(e) ? e.message : "이미지를 저장하지 못했어요.",
+        tone: "error",
+      });
+    }
+  }, []);
+
+  // 셀 액션 (T2.4): 시드 고정 — 고급 패널 시드 입력에 채워 재생성 준비 (F-1.5)
+  const handleUseSeed = useCallback(() => {
+    const st = useGenerateStore.getState();
+    if (st.session.seed === null) return;
+    st.setSeedInput(String(st.session.seed));
+    setToast({
+      message: `시드 ${st.session.seed}를 고정했어요. 생성하기를 누르면 같은 구도로 다시 만들어요.`,
+      tone: "success",
+    });
+  }, []);
+
   // 단축키: ⌘↵ 생성, Esc 취소 (04 §4.1)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -173,7 +218,7 @@ export default function GenerateScreen() {
 
   // 새 에러가 오면 토스트도 함께 표시 (배너 + 토스트, 04 §4.1)
   useEffect(() => {
-    if (session.error) setToastMessage(session.error.message);
+    if (session.error) setToast({ message: session.error.message, tone: "error" });
   }, [session.error]);
 
   const generating = session.phase === "generating";
@@ -409,12 +454,13 @@ export default function GenerateScreen() {
           session={session}
           dataRoot={dataRoot}
           altLabel={`${keyword.trim() || "이미지"} · ${presetLabelText}`}
+          onToggleFavorite={(id) => void handleToggleFavorite(id)}
+          onDownload={(id) => void handleDownload(id)}
+          onUseSeed={handleUseSeed}
         />
       </section>
 
-      {toastMessage && (
-        <Toast message={toastMessage} tone="error" onClose={() => setToastMessage(null)} />
-      )}
+      {toast && <Toast message={toast.message} tone={toast.tone} onClose={() => setToast(null)} />}
     </div>
   );
 }

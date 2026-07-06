@@ -10,6 +10,7 @@ import {
   failLocal,
   requestCancel,
   startSession,
+  toggleFavorite,
   type GenSession,
 } from "./genSession";
 import { resolvePresetId } from "./presetTypes";
@@ -45,6 +46,8 @@ interface GenerateState {
   failLocal: (error: AppError) => void;
   markCancelRequested: () => void;
   dismissError: () => void;
+  /** ♥ 낙관적 토글 (실패 시 한 번 더 호출해 되돌림) */
+  toggleFavorite: (id: string) => void;
 }
 
 export const useGenerateStore = create<GenerateState>((set) => ({
@@ -80,4 +83,5 @@ export const useGenerateStore = create<GenerateState>((set) => ({
   failLocal: (error) => set((s) => ({ session: failLocal(s.session, error) })),
   markCancelRequested: () => set((s) => ({ session: requestCancel(s.session) })),
   dismissError: () => set((s) => ({ session: dismissError(s.session) })),
+  toggleFavorite: (id) => set((s) => ({ session: toggleFavorite(s.session, id) })),
 }));

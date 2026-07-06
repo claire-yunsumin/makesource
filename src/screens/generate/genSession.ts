@@ -11,6 +11,15 @@ import type { GenDoneEvent, GenErrorEvent, GenProgressEvent } from "../../lib/ta
 
 export type GenPhase = "idle" | "generating" | "error";
 
+/** 완료된 결과 이미지 한 장 (T2.4 셀 액션용 id·♥ 포함). */
+export interface GenImage {
+  /** generations DB id */
+  id: string;
+  /** 데이터 루트 기준 상대 경로 */
+  path: string;
+  favorite: boolean;
+}
+
 export interface GenSession {
   phase: GenPhase;
   /** 진행 중인 잡. generating일 때만 non-null */
@@ -21,8 +30,10 @@ export interface GenSession {
   progress: number;
   /** OOM 폴백 등 사용자 고지 (T1.5) — 다음 생성 시작 시 초기화 */
   notice: string | null;
-  /** 마지막 완료 결과 (데이터 루트 기준 상대 경로) */
-  images: string[];
+  /** 마지막 완료 결과 */
+  images: GenImage[];
+  /** 마지막 완료 배치의 시드 (시드 고정 재생성 — F-1.5) */
+  seed: number | null;
   /** generating 중 그리드에 표시할 셀 수 (요청 장수) */
   cells: number;
   error: AppError | null;
@@ -35,13 +46,21 @@ export const INITIAL_SESSION: GenSession = {
   progress: 0,
   notice: null,
   images: [],
+  seed: null,
   cells: 0,
   error: null,
 };
 
-/** 생성 시작. 이전 결과 이미지는 완료 전까지 유지한다. */
+/** 생성 시작. 이전 결과 이미지·시드는 완료 전까지 유지한다. */
 export function startSession(session: GenSession, jobId: string, count: number): GenSession {
-  return { ...INITIAL_SESSION, images: session.images, phase: "generating", jobId, cells: count };
+  return {
+    ...INITIAL_SESSION,
+    images: session.images,
+    seed: session.seed,
+    phase: "generating",
+    jobId,
+    cells: count,
+  };
 }
 
 export function requestCancel(session: GenSession): GenSession {
@@ -62,9 +81,24 @@ export function applyDone(session: GenSession, event: GenDoneEvent): GenSession 
     jobId: null,
     cancelRequested: false,
     progress: 0,
-    images: event.imagePaths,
+    images: event.imagePaths.map((path, i) => ({
+      id: event.generationIds[i] ?? "",
+      path,
+      favorite: false,
+    })),
+    seed: event.seed,
     cells: 0,
     error: null,
+  };
+}
+
+/** ♥ 토글 (T2.4). 낙관적 갱신 — invoke 실패 시 같은 함수로 되돌린다. */
+export function toggleFavorite(session: GenSession, id: string): GenSession {
+  return {
+    ...session,
+    images: session.images.map((img) =>
+      img.id === id ? { ...img, favorite: !img.favorite } : img,
+    ),
   };
 }
 
