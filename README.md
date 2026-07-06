@@ -41,6 +41,8 @@ brew install --cask claire-yunsumin/localbrush/localbrush
 
 ([homebrew-localbrush](https://github.com/claire-yunsumin/homebrew-localbrush) tap. 릴리스 직후에는 캐스크의 버전·체크섬이 아직 최신이 아닐 수 있습니다 — 그럴 땐 위 dmg 직접 설치를 이용해주세요.)
 
+설치 후 사용법은 [docs/09_사용자_가이드.md](docs/09_사용자_가이드.md)를 참고하세요.
+
 ## 개발 환경 세팅
 
 요구 사항: macOS, Node.js 20+, pnpm, Rust(stable, `~/.cargo/bin`이 PATH에 있어야 함)
@@ -71,6 +73,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 | [docs/06_결정기록.md](docs/06_결정기록.md) | 주요 기술·운영 결정 기록과 미결정 사항 추적 |
 | [docs/07_프리셋_프롬프트_연구.md](docs/07_프리셋_프롬프트_연구.md) | 프리셋 6종 프롬프트 실험 기록 |
 | [docs/08_수동_QA_체크리스트.md](docs/08_수동_QA_체크리스트.md) | 배포 전 실기기(Apple Silicon) 수동 검증 체크리스트 |
+| [docs/09_사용자_가이드.md](docs/09_사용자_가이드.md) | 사용법 안내서 — 개발 문서가 아니라 실사용자용 |
 
 기여 규칙(브랜치 전략, 커밋 컨벤션, IPC 계약 등)은 [CLAUDE.md](CLAUDE.md)를 참고하세요.
 
