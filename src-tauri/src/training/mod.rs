@@ -9,6 +9,10 @@ use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
 
+pub mod parser;
+pub mod profiles;
+pub mod runner;
+
 pub fn dataset_dir(data_root: &Path, id: &str) -> PathBuf {
     data_root.join("datasets").join(id)
 }

@@ -208,6 +208,66 @@ export function kohyaInstallRun(): Promise<string> {
   return invokeCommand<string>("kohya_install_run");
 }
 
+// ---- LoRA 학습 잡 (TAD §5/§8, T6.3) ----
+
+export type TrainingProfile = "fast" | "standard" | "quality";
+
+export interface TrainingStartArgs {
+  /** 완료 시 등록될 스타일 id (프론트에서 미리 발급 — 등록 자체는 T6.4) */
+  styleId: string;
+  /** dataset_create가 돌려준 dir */
+  datasetDir: string;
+  profile: TrainingProfile;
+  /** 폴더 규약({repeats}_{trigger})과 스타일 등록에 쓰임 */
+  triggerWord: string;
+}
+
+/** `train://progress` 페이로드 */
+export interface TrainProgressEvent {
+  jobId: string;
+  /** 0.0 ~ 1.0 */
+  progress: number;
+  etaSeconds?: number;
+  loss?: number;
+  /** [현재, 전체] — epoch 경계 이후부터 채워짐 */
+  epoch?: [number, number];
+}
+
+/** `train://sample` 페이로드 (epoch 샘플 이미지, 절대 경로) */
+export interface TrainSampleEvent {
+  jobId: string;
+  imagePath: string;
+}
+
+/** `train://done` 페이로드 */
+export interface TrainDoneEvent {
+  jobId: string;
+  styleId: string;
+  /** 데이터 루트 기준 상대 경로 (models/loras/…) */
+  loraPath: string;
+  triggerWord: string;
+}
+
+/** `train://error` 페이로드 (취소는 error.code === "E_CANCELED") */
+export interface TrainErrorEvent {
+  jobId: string;
+  error: AppError;
+}
+
+export const TRAIN_PROGRESS_EVENT = "train://progress";
+export const TRAIN_SAMPLE_EVENT = "train://sample";
+export const TRAIN_DONE_EVENT = "train://done";
+export const TRAIN_ERROR_EVENT = "train://error";
+
+/** 학습 시작. jobId 반환, 진행/샘플/완료/실패는 train:// 이벤트 구독. */
+export function trainingStart(args: TrainingStartArgs): Promise<string> {
+  return invokeCommand<string>("training_start", { args });
+}
+
+export function trainingCancel(jobId: string): Promise<void> {
+  return invokeCommand<void>("training_cancel", { jobId });
+}
+
 // ---- translate (TAD §4, §5) ----
 
 /**

@@ -198,10 +198,32 @@ impl Db {
         id: &str,
         status: &str,
         progress: f64,
+        eta_seconds: Option<i64>,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE training_jobs SET status = ?, progress = ? WHERE id = ?")
+        sqlx::query(
+            "UPDATE training_jobs SET status = ?, progress = ?, eta_seconds = ? WHERE id = ?",
+        )
+        .bind(status)
+        .bind(progress)
+        .bind(eta_seconds)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// 학습 잡 종료 기록 (T6.3): done|failed|canceled + error/finished_at.
+    pub async fn finish_training_job(
+        &self,
+        id: &str,
+        status: &str,
+        error: Option<&str>,
+        finished_at: i64,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE training_jobs SET status = ?, error = ?, finished_at = ? WHERE id = ?")
             .bind(status)
-            .bind(progress)
+            .bind(error)
+            .bind(finished_at)
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -415,11 +437,21 @@ mod tests {
         db.insert_training_job(&job).await.unwrap();
         assert_eq!(db.get_training_job("t1").await.unwrap().unwrap(), job);
 
-        db.update_training_progress("t1", "training", 0.5)
+        db.update_training_progress("t1", "training", 0.5, Some(120))
             .await
             .unwrap();
         let updated = db.get_training_job("t1").await.unwrap().unwrap();
         assert_eq!(updated.status, "training");
         assert_eq!(updated.progress, 0.5);
+        assert_eq!(updated.eta_seconds, Some(120));
+
+        // 종료 기록 (T6.3): status/error/finished_at
+        db.finish_training_job("t1", "failed", Some("메모리 부족"), 1_700_000_099_000)
+            .await
+            .unwrap();
+        let finished = db.get_training_job("t1").await.unwrap().unwrap();
+        assert_eq!(finished.status, "failed");
+        assert_eq!(finished.error.as_deref(), Some("메모리 부족"));
+        assert_eq!(finished.finished_at, Some(1_700_000_099_000));
     }
 }
