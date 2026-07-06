@@ -338,3 +338,44 @@ export const ESSENCE_PROGRESS_EVENT = "essence://progress";
 export function essenceCreate(imagePaths: string[]): Promise<EssenceResult> {
   return invokeCommand<EssenceResult>("essence_create", { args: { imagePaths } });
 }
+
+// ---- LoRA 학습 데이터셋 (TAD §5, T6.2, 04 §4.3 학습 마법사 ①②) ----
+
+export interface DatasetInfo {
+  id: string;
+  /** 앱 데이터 루트 기준 절대 경로 — caption_dataset/training_start(T6.3)에 그대로 넘긴다 */
+  dir: string;
+  /** dir 안의 이미지 파일명(경로 아님) */
+  files: string[];
+}
+
+/** 드롭한 이미지(절대 경로)를 datasets/{id}/로 복사해 새 데이터셋을 만든다. */
+export function datasetCreate(imagePaths: string[]): Promise<DatasetInfo> {
+  return invokeCommand<DatasetInfo>("dataset_create", { imagePaths });
+}
+
+export interface CaptionItem {
+  file: string;
+  caption: string;
+}
+
+/** `caption://progress` 페이로드 (캡션 생성 로그 중계) */
+export interface CaptionProgressEvent {
+  message: string;
+}
+
+export const CAPTION_PROGRESS_EVENT = "caption://progress";
+
+/**
+ * dir 안의 이미지에 WD14 태그 캡션을 자동 생성한다(결과를 직접 반환, 진행은
+ * 이벤트 — essence_create와 동일한 계약 형태). 사용자가 캡션 테이블에서
+ * 다듬거나 트리거 단어를 일괄 추가한 뒤 datasetSaveCaptions로 저장한다.
+ */
+export function captionDataset(dir: string): Promise<CaptionItem[]> {
+  return invokeCommand<CaptionItem[]>("caption_dataset", { dir });
+}
+
+/** 캡션을 kohya sd-scripts 관례({basename}.txt, 이미지와 같은 폴더)로 저장. */
+export function datasetSaveCaptions(dir: string, items: CaptionItem[]): Promise<void> {
+  return invokeCommand<void>("dataset_save_captions", { dir, items });
+}

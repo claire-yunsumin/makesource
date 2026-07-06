@@ -8,10 +8,12 @@ import { useNavigate } from "react-router-dom";
 import { styleDelete, stylesList, type Style } from "../../lib/tauri";
 import { useGenerateStore } from "../generate/store";
 import EssenceWizard from "./EssenceWizard";
+import TrainingWizard from "./TrainingWizard";
 
 /**
- * 스타일 관리 (04 §4.3, T4.2): 카드 그리드 + 에센스 마법사.
- * [생성에 사용]은 IP-Adapter 경로 연결(T4.3)에서, 정밀 학습(LoRA)은 M6에서.
+ * 스타일 관리 (04 §4.3, T4.2/T6.2): 카드 그리드 + 에센스 마법사 + 학습 마법사.
+ * [생성에 사용]은 IP-Adapter 경로 연결(T4.3)에서. 학습 마법사는 아직 데이터셋
+ * 준비(①②)까지만 — 프로파일 선택·학습 시작(③④)은 T6.3/T6.4.
  */
 export default function StylesScreen() {
   const [styles, setStyles] = useState<Style[]>([]);
@@ -19,6 +21,7 @@ export default function StylesScreen() {
   const [error, setError] = useState<AppError | null>(null);
   const [dataRoot, setDataRoot] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [trainingWizardOpen, setTrainingWizardOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "error" | "success" } | null>(null);
   const navigate = useNavigate();
 
@@ -75,7 +78,13 @@ export default function StylesScreen() {
         >
           + 새 스타일 (에센스 · 몇 분)
         </button>
-        <span className="text-xs text-text-sub">정밀 학습(LoRA)은 준비 중이에요</span>
+        <button
+          type="button"
+          onClick={() => setTrainingWizardOpen(true)}
+          className="ease-out-ui rounded-md border border-border px-3 py-1.5 text-xs font-medium text-text transition-colors duration-150 hover:bg-surface-2"
+        >
+          + 정밀 학습 (LoRA · 수 시간)
+        </button>
       </div>
 
       {error && (
@@ -166,6 +175,7 @@ export default function StylesScreen() {
           }}
         />
       )}
+      {trainingWizardOpen && <TrainingWizard onClose={() => setTrainingWizardOpen(false)} />}
       {toast && <Toast message={toast.message} tone={toast.tone} onClose={() => setToast(null)} />}
     </div>
   );

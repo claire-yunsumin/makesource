@@ -11,6 +11,7 @@ pub mod error;
 pub mod paths;
 pub mod prompt;
 pub mod styles;
+pub mod training;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -74,6 +75,9 @@ pub fn run() {
             commands::presets::presets_import,
             commands::training::kohya_install_status,
             commands::training::kohya_install_run,
+            commands::training::dataset_create,
+            commands::training::caption_dataset,
+            commands::training::dataset_save_captions,
             commands::translate::translate_keyword,
             commands::history::history_list,
             commands::history::history_toggle_favorite,
