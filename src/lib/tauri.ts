@@ -182,6 +182,32 @@ export function presetsImport(srcPath: string): Promise<Preset[]> {
   return invokeCommand<Preset[]>("presets_import", { srcPath });
 }
 
+// ---- training / kohya 선택 설치 (TAD §5, T6.1) ----
+
+export interface KohyaInstallStatus {
+  installed: boolean;
+}
+
+/** LoRA 학습 도구(kohya sd-scripts)가 이미 설치돼 있는지 (지연 설치, 첫 사용 시). */
+export function kohyaInstallStatus(): Promise<KohyaInstallStatus> {
+  return invokeCommand<KohyaInstallStatus>("kohya_install_status");
+}
+
+/** `train://install_progress` 페이로드 */
+export interface KohyaInstallProgressEvent {
+  jobId: string;
+  done: boolean;
+  message: string;
+  error?: AppError;
+}
+
+export const KOHYA_INSTALL_PROGRESS_EVENT = "train://install_progress";
+
+/** 설치 시작. jobId 반환, 완료/실패는 KOHYA_INSTALL_PROGRESS_EVENT 구독. */
+export function kohyaInstallRun(): Promise<string> {
+  return invokeCommand<string>("kohya_install_run");
+}
+
 // ---- translate (TAD §4, §5) ----
 
 /**

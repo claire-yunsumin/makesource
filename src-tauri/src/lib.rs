@@ -28,6 +28,7 @@ pub fn run() {
             app.manage(db);
             app.manage(commands::bootstrap::BootstrapJob::default());
             app.manage(commands::generate::GenJobs::default());
+            app.manage(commands::training::KohyaInstallJob::default());
 
             // 엔진 수퍼바이저 (TAD §6). 부트스트랩 완료 상태면 즉시 기동.
             let config = engine::EngineConfig::from_data_root(&data_root);
@@ -71,6 +72,8 @@ pub fn run() {
             commands::presets::presets_save,
             commands::presets::presets_export,
             commands::presets::presets_import,
+            commands::training::kohya_install_status,
+            commands::training::kohya_install_run,
             commands::translate::translate_keyword,
             commands::history::history_list,
             commands::history::history_toggle_favorite,
