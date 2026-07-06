@@ -166,7 +166,40 @@ export function translateKeyword(keyword: string): Promise<Translation> {
   return invokeCommand<Translation>("translate_keyword", { keyword });
 }
 
-// ---- history / export (TAD §5, T2.4) ----
+// ---- history / export (TAD §5, T2.4/T3.1) ----
+
+/** generations DB 행 (TAD §3.1 — Rust db::models::Generation과 동기). */
+export interface Generation {
+  id: string;
+  /** unix ms */
+  createdAt: number;
+  /** 앱 데이터 루트 기준 상대 경로 */
+  imagePath: string;
+  thumbPath: string;
+  keywordKo: string | null;
+  promptFinal: string;
+  negative: string | null;
+  presetId: string | null;
+  presetVersion: number | null;
+  styleId: string | null;
+  seed: number;
+  steps: number | null;
+  cfg: number | null;
+  width: number | null;
+  height: number | null;
+  model: string | null;
+  favorite: boolean;
+}
+
+export interface HistoryListArgs {
+  /** 직전 페이지 마지막 항목의 커서 ("{createdAt}:{id}"). 없으면 첫 페이지 */
+  cursor?: string;
+}
+
+/** 히스토리 최신순 페이지 (페이지 크기 40 — 백엔드 PAGE_SIZE). 검색·필터는 T3.3. */
+export function historyList(args?: HistoryListArgs): Promise<Generation[]> {
+  return invokeCommand<Generation[]>("history_list", { args });
+}
 
 /** 즐겨찾기 토글. 프론트는 낙관적으로 갱신하고 실패 시 되돌린다. */
 export function historyToggleFavorite(id: string): Promise<void> {

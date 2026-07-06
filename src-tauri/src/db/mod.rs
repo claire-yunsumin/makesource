@@ -98,6 +98,39 @@ impl Db {
         .await
     }
 
+    /// 최신순 keyset 페이징 (T3.1, TAD §5 history_list).
+    /// cursor는 직전 페이지 마지막 행의 (created_at, id) — 그보다 오래된 행부터 반환한다.
+    /// created_at이 같은 행은 id DESC로 안정 정렬.
+    pub async fn list_generations_page(
+        &self,
+        limit: i64,
+        cursor: Option<(i64, &str)>,
+    ) -> Result<Vec<Generation>, sqlx::Error> {
+        match cursor {
+            Some((created_at, id)) => {
+                sqlx::query_as::<_, Generation>(
+                    "SELECT * FROM generations
+                     WHERE created_at < ? OR (created_at = ? AND id < ?)
+                     ORDER BY created_at DESC, id DESC LIMIT ?",
+                )
+                .bind(created_at)
+                .bind(created_at)
+                .bind(id)
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await
+            }
+            None => {
+                sqlx::query_as::<_, Generation>(
+                    "SELECT * FROM generations ORDER BY created_at DESC, id DESC LIMIT ?",
+                )
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await
+            }
+        }
+    }
+
     pub async fn set_favorite(&self, id: &str, favorite: bool) -> Result<(), sqlx::Error> {
         sqlx::query("UPDATE generations SET favorite = ? WHERE id = ?")
             .bind(favorite)
@@ -214,6 +247,39 @@ mod tests {
 
         // limit 반영
         assert_eq!(db.list_generations(1).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn list_page_keyset_pagination_is_stable() {
+        let db = Db::connect_in_memory().await.unwrap();
+        // created_at 충돌 케이스 포함: (300, c) (200, b2) (200, b1) (100, a)
+        for (id, at) in [("a", 100), ("b1", 200), ("b2", 200), ("c", 300)] {
+            db.insert_generation(&sample_generation(id, at))
+                .await
+                .unwrap();
+        }
+
+        // 1페이지
+        let p1 = db.list_generations_page(2, None).await.unwrap();
+        let ids1: Vec<_> = p1.iter().map(|g| g.id.as_str()).collect();
+        assert_eq!(ids1, vec!["c", "b2"]);
+
+        // 2페이지: 커서 = 1페이지 마지막 (200, b2) — 같은 created_at의 b1이 빠지면 안 됨
+        let last = p1.last().unwrap();
+        let p2 = db
+            .list_generations_page(2, Some((last.created_at, &last.id)))
+            .await
+            .unwrap();
+        let ids2: Vec<_> = p2.iter().map(|g| g.id.as_str()).collect();
+        assert_eq!(ids2, vec!["b1", "a"]);
+
+        // 끝: 빈 페이지
+        let last2 = p2.last().unwrap();
+        let p3 = db
+            .list_generations_page(2, Some((last2.created_at, &last2.id)))
+            .await
+            .unwrap();
+        assert!(p3.is_empty());
     }
 
     #[tokio::test]

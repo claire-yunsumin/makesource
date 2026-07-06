@@ -64,6 +64,7 @@ pub fn run() {
             commands::generate::generate_cancel,
             commands::presets::presets_get,
             commands::translate::translate_keyword,
+            commands::history::history_list,
             commands::history::history_toggle_favorite,
             commands::export::export_image,
         ])
