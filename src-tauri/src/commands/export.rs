@@ -1,7 +1,7 @@
 //! export_image (TAD §5, F-4.2).
 //!
-//! png는 원본 복사, jpg/webp는 image 크레이트로 변환(T3.2).
-//! 투명 배경(배경 제거)은 T2.4b에서 추가한다.
+//! png는 원본 복사, jpg/webp는 image 크레이트로 변환(T3.2),
+//! 투명 배경은 rembg(u2net) 서브프로세스로 배경 제거(T2.4b).
 
 use std::path::{Path, PathBuf};
 
@@ -11,6 +11,13 @@ use tauri::{AppHandle, Manager, State};
 use crate::db::Db;
 use crate::error::AppError;
 use crate::paths;
+
+/// 원본은 레포 루트 `python/remove_bg.py` (TAD §2). translate.py와 같은 패턴으로
+/// 바이너리에 내장했다가 실행 시점에 데이터 루트에 기록해 실행한다.
+pub const REMOVE_BG_PY: &str = include_str!("../../../python/remove_bg.py");
+
+/// u2net 추론은 CPU에서 수십 초까지 걸릴 수 있어 넉넉히.
+const REMOVE_BG_TIMEOUT_SECS: u64 = 120;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,6 +59,72 @@ pub fn unique_path(dest_dir: &Path, base: &str, ext: &str) -> PathBuf {
     }
     // 사실상 도달 불가 — 마지막 후보 반환
     dest_dir.join(format!("{base}-999.{ext}"))
+}
+
+/// remove_bg.py stdout(JSON 한 줄) 파싱.
+pub fn parse_remove_bg_output(line: &str) -> Result<(), String> {
+    #[derive(Deserialize)]
+    struct PyOut {
+        ok: bool,
+        error: Option<String>,
+        detail: Option<String>,
+    }
+    let parsed: PyOut =
+        serde_json::from_str(line.trim()).map_err(|e| format!("잘못된 출력: {e}"))?;
+    if parsed.ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "{}: {}",
+            parsed.error.unwrap_or_else(|| "unknown".into()),
+            parsed.detail.unwrap_or_default()
+        ))
+    }
+}
+
+/// rembg 서브프로세스로 배경 제거 PNG 저장 (T2.4b).
+async fn run_remove_bg(
+    python: &Path,
+    script: &Path,
+    src: &Path,
+    dest: &Path,
+    model_dir: &Path,
+) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut child = tokio::process::Command::new(python)
+        .arg(script)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("실행 실패: {e}"))?;
+
+    let input = serde_json::json!({
+        "src": src.to_string_lossy(),
+        "dest": dest.to_string_lossy(),
+        "modelDir": model_dir.to_string_lossy(),
+    })
+    .to_string()
+        + "\n";
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(input.as_bytes())
+            .await
+            .map_err(|e| format!("stdin 쓰기 실패: {e}"))?;
+    }
+    drop(child.stdin.take());
+
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(REMOVE_BG_TIMEOUT_SECS),
+        child.wait_with_output(),
+    )
+    .await
+    .map_err(|_| format!("{REMOVE_BG_TIMEOUT_SECS}초 안에 끝나지 않았어요"))?
+    .map_err(|e| format!("프로세스 오류: {e}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_remove_bg_output(stdout.lines().next().unwrap_or(""))
 }
 
 /// png는 그대로 복사, jpg/webp는 변환해서 저장한다 (블로킹 — spawn_blocking에서 호출).
@@ -114,10 +187,11 @@ pub async fn export_image(
             args.format.clone(),
         ));
     }
-    if args.transparent == Some(true) {
+    let transparent = args.transparent == Some(true);
+    if transparent && args.format != "png" {
         return Err(AppError::new(
-            "E_TRANSPARENT_UNSUPPORTED",
-            "투명 배경 저장은 아직 준비 중이에요.",
+            "E_TRANSPARENT_FORMAT",
+            "투명 배경은 PNG로만 저장할 수 있어요.",
         ));
     }
 
@@ -150,6 +224,33 @@ pub async fn export_image(
         gen.seed
     );
     let dest = unique_path(&dest_dir, &base, &args.format);
+
+    if transparent {
+        // 배경 제거 경로 (T2.4b): venv 파이썬 + rembg
+        let python = data_root.join("runtime/venv/bin/python");
+        if !python.exists() {
+            return Err(AppError::new(
+                "E_BG_TOOL_NOT_READY",
+                "배경 제거 도구가 아직 설치되지 않았어요. 처음 사용 설정(엔진 설치)을 마치면 쓸 수 있어요.",
+            ));
+        }
+        let script_dir = data_root.join("runtime");
+        std::fs::create_dir_all(&script_dir)?;
+        let script = script_dir.join("remove_bg.py");
+        std::fs::write(&script, REMOVE_BG_PY)?;
+        run_remove_bg(
+            &python,
+            &script,
+            &src,
+            &dest,
+            &data_root.join("models/rembg"),
+        )
+        .await
+        .map_err(|detail| {
+            AppError::with_detail("E_BG_REMOVE", "배경을 제거하지 못했어요.", detail)
+        })?;
+        return Ok(dest.to_string_lossy().into_owned());
+    }
 
     // 이미지 디코드/인코드는 CPU 작업 — command 스레드를 막지 않는다
     let format = args.format.clone();
@@ -196,6 +297,37 @@ mod tests {
 
         let err = write_converted(&src, &dir.path().join("out.gif"), "gif").unwrap_err();
         assert_eq!(err.code, "E_FORMAT_UNSUPPORTED");
+    }
+
+    #[test]
+    fn remove_bg_output_parsing() {
+        assert!(parse_remove_bg_output(r#"{"ok":true,"dest":"/x.png"}"#).is_ok());
+        let err = parse_remove_bg_output(r#"{"ok":false,"error":"model_missing","detail":"d"}"#)
+            .unwrap_err();
+        assert!(err.contains("model_missing"));
+        assert!(parse_remove_bg_output("garbage").is_err());
+    }
+
+    #[tokio::test]
+    async fn fake_python_remove_bg_roundtrip() {
+        // 계약(stdin JSON → stdout JSON 한 줄)을 흉내내는 가짜 파이썬 — dest 파일 생성
+        let dir = tempfile::tempdir().unwrap();
+        let fake = dir.path().join("python");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\nread line\ndest=$(echo \"$line\" | sed 's/.*\"dest\": *\"\\([^\"]*\\)\".*/\\1/')\ntouch \"$dest\"\necho \"{\\\"ok\\\":true,\\\"dest\\\":\\\"$dest\\\"}\"\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let src = dir.path().join("src.png");
+        std::fs::write(&src, b"x").unwrap();
+        let dest = dir.path().join("out.png");
+        run_remove_bg(&fake, Path::new("/dev/null"), &src, &dest, dir.path())
+            .await
+            .unwrap();
+        assert!(dest.exists());
     }
 
     #[test]

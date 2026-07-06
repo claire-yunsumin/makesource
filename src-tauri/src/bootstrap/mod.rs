@@ -281,14 +281,15 @@ impl Bootstrapper {
             None,
         )
         .await?;
-        // 한→영 변환(T2.3b, D-008) — 모델은 download_models 단계에서 받고
-        // translate.py가 첫 사용 시 설치한다
+        // 앱 파이썬 도구: 한→영 변환(T2.3b) + 배경 제거(T2.4b).
+        // 모델은 download_models 단계에서 받는다
         self.run_cmd(
             &self.uv_bin(),
             &[
                 "pip",
                 "install",
                 "argostranslate",
+                "rembg",
                 "--python",
                 &self.venv_python().to_string_lossy(),
             ],

@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { joinImagePath } from "../../lib/imagePath";
 import type { Generation } from "../../lib/tauri";
@@ -11,7 +11,7 @@ interface DetailModalProps {
   dataRoot: string | null;
   onClose: () => void;
   onToggleFavorite: (id: string) => void;
-  onExport: (id: string, format: ExportFormat) => void;
+  onExport: (id: string, format: ExportFormat, transparent: boolean) => void;
   onCopyMeta: (text: string) => void;
   onRegenerate: (item: Generation) => void;
 }
@@ -28,6 +28,8 @@ export default function DetailModal({
 }: DetailModalProps) {
   const abs = dataRoot ? joinImagePath(dataRoot, item.imagePath) : null;
   const title = item.keywordKo ?? "이미지";
+  // 투명 배경(배경 제거, T2.4b) — PNG 전용이라 켜면 JPG/WebP 비활성
+  const [transparent, setTransparent] = useState(false);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -134,17 +136,29 @@ export default function DetailModal({
             </button>
             <div>
               <p className="mb-1 text-xs text-text-sub">내보내기</p>
+              <label className="mb-2 flex cursor-pointer items-center gap-2 text-xs text-text">
+                <input
+                  type="checkbox"
+                  checked={transparent}
+                  onChange={(e) => setTransparent(e.target.checked)}
+                />
+                투명 배경 (PNG 전용, 배경을 지워요)
+              </label>
               <div className="flex gap-1">
-                {(["png", "jpg", "webp"] as const).map((format) => (
-                  <button
-                    key={format}
-                    type="button"
-                    onClick={() => onExport(item.id, format)}
-                    className={`${actionClass} flex-1 uppercase`}
-                  >
-                    {format}
-                  </button>
-                ))}
+                {(["png", "jpg", "webp"] as const).map((format) => {
+                  const disabled = transparent && format !== "png";
+                  return (
+                    <button
+                      key={format}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => onExport(item.id, format, transparent)}
+                      className={`${actionClass} flex-1 uppercase disabled:cursor-not-allowed disabled:opacity-40`}
+                    >
+                      {format}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
