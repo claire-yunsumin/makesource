@@ -64,8 +64,9 @@ localbrush/
 
 ```
 models/checkpoints/  models/loras/  models/ipadapter/  models/clip_vision/
+models/argos/        models/rembg/  models/hf/ (HF 캐시 — 에센스 분석 모델)
 runtime/comfyui/     runtime/venv/  runtime/kohya/
-outputs/YYYY-MM/     training/{style_id}/dataset/
+outputs/YYYY-MM/     training/{style_id}/dataset/  styles/{style_id}/ (에센스 참조 이미지)
 presets.json         styles.json    app.db  logs/
 ```
 

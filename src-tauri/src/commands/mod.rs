@@ -2,8 +2,10 @@
 
 pub mod bootstrap;
 pub mod engine;
+pub mod essence;
 pub mod export;
 pub mod generate;
 pub mod history;
 pub mod presets;
+pub mod styles;
 pub mod translate;
