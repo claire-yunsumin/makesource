@@ -49,4 +49,10 @@ describe("previewPrompt", () => {
       "cinematic illustration of, cabin",
     );
   });
+
+  it("에센스 프롬프트는 키워드와 suffix 사이 (TAD §4 순서)", () => {
+    expect(previewPrompt(preset, "log cabin", "flat color, simple background")).toBe(
+      "cinematic illustration of, log cabin, flat color, simple background, soft pastel colors",
+    );
+  });
 });

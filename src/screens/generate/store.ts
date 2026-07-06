@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { AppError } from "../../lib/appError";
-import type { GenDoneEvent, GenErrorEvent, GenProgressEvent, Preset } from "../../lib/tauri";
+import type { GenDoneEvent, GenErrorEvent, GenProgressEvent, Preset, Style } from "../../lib/tauri";
 import {
   INITIAL_SESSION,
   applyDone,
@@ -23,6 +23,10 @@ interface GenerateState {
   presetsError: AppError | null;
   /** 선택된 프리셋 id (프리셋 로딩 전에는 "") */
   presetId: string;
+  /** 로딩된 스타일 목록 (styles_list — T4.3) */
+  styles: Style[];
+  /** 선택된 스타일 id ("" = 없음) */
+  styleId: string;
   keyword: string;
   count: number;
   /** SIZE_OPTIONS 인덱스 */
@@ -34,6 +38,9 @@ interface GenerateState {
   setPresets: (presets: Preset[]) => void;
   setPresetsError: (error: AppError | null) => void;
   setPresetId: (id: string) => void;
+  /** 목록 저장 + 선택 정합화 (선택된 스타일이 삭제됐으면 "없음"으로) */
+  setStyles: (styles: Style[]) => void;
+  setStyleId: (id: string) => void;
   setKeyword: (keyword: string) => void;
   setCount: (count: number) => void;
   setSizeIndex: (index: number) => void;
@@ -55,6 +62,8 @@ export const useGenerateStore = create<GenerateState>((set) => ({
   presetsLoading: true,
   presetsError: null,
   presetId: "",
+  styles: [],
+  styleId: "",
   keyword: "",
   count: 4,
   sizeIndex: 0,
@@ -71,6 +80,12 @@ export const useGenerateStore = create<GenerateState>((set) => ({
     })),
   setPresetsError: (presetsError) => set({ presetsError, presetsLoading: false }),
   setPresetId: (presetId) => set({ presetId }),
+  setStyles: (styles) =>
+    set((s) => ({
+      styles,
+      styleId: styles.some((st) => st.id === s.styleId) ? s.styleId : "",
+    })),
+  setStyleId: (styleId) => set({ styleId }),
   setKeyword: (keyword) => set({ keyword }),
   setCount: (count) => set({ count }),
   setSizeIndex: (sizeIndex) => set({ sizeIndex }),

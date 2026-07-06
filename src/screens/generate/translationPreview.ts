@@ -24,11 +24,11 @@ export function translationSourceLabel(source: TranslationSource): string | null
 }
 
 /**
- * 조립될 프롬프트 미리보기 — 백엔드 assemble_prompt(TAD §4)와 같은 규칙.
- * 스타일 조각(트리거워드·에센스)은 T4.3에서 이 미리보기에도 추가한다.
+ * 조립될 프롬프트 미리보기 — 백엔드 assemble_prompt(TAD §4)와 같은 규칙:
+ * prefix, 키워드, 에센스, suffix 순 (빈 조각 생략). LoRA 트리거워드는 M6에서.
  */
-export function previewPrompt(preset: Preset, keywordEn: string): string {
-  return [preset.prefix, keywordEn, preset.suffix]
+export function previewPrompt(preset: Preset, keywordEn: string, essencePrompt = ""): string {
+  return [preset.prefix, keywordEn, essencePrompt, preset.suffix]
     .map((part) => part.trim())
     .filter((part) => part !== "")
     .join(", ");

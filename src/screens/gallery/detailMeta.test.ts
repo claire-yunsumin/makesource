@@ -42,14 +42,16 @@ describe("metaText", () => {
 });
 
 describe("regenFormState", () => {
-  it("프리셋·키워드·시드·크기를 폼 상태로 만든다", () => {
-    const form = regenFormState(base);
+  it("프리셋·스타일·키워드·시드·크기를 폼 상태로 만든다", () => {
+    const form = regenFormState({ ...base, styleId: "style-1" });
     expect(form).toEqual({
       presetId: "storybook",
+      styleId: "style-1",
       keyword: "통나무집",
       seedInput: "42",
       sizeIndex: 1, // 1216×832 = 가로 3:2
     });
+    expect(regenFormState(base).styleId).toBe(""); // styleId 없으면 "없음"
   });
 
   it("현재 크기 옵션에 없는 해상도(폴백 하향)는 기본 1:1로", () => {

@@ -23,7 +23,6 @@ pub struct GenJobs(pub Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>)
 #[serde(rename_all = "camelCase")]
 pub struct GenerateArgs {
     pub preset_id: String,
-    #[allow(dead_code)] // 스타일 연동은 T4.3/M6
     pub style_id: Option<String>,
     pub keyword: String,
     pub count: Option<u32>,
@@ -85,6 +84,7 @@ pub async fn generate(
 
     let req = GenerateRequest {
         preset_id: args.preset_id,
+        style_id: args.style_id,
         keyword: args.keyword,
         count: args.count.unwrap_or(1),
         size: args.size.map(|[w, h]| (w, h)),

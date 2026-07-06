@@ -13,6 +13,7 @@ import {
   generateCancel,
   historyToggleFavorite,
   presetsGet,
+  stylesList,
   translateKeyword,
   type GenDoneEvent,
   type GenErrorEvent,
@@ -31,6 +32,8 @@ export default function GenerateScreen() {
   const presetsLoading = useGenerateStore((s) => s.presetsLoading);
   const presetsError = useGenerateStore((s) => s.presetsError);
   const presetId = useGenerateStore((s) => s.presetId);
+  const styles = useGenerateStore((s) => s.styles);
+  const styleId = useGenerateStore((s) => s.styleId);
   const keyword = useGenerateStore((s) => s.keyword);
   const count = useGenerateStore((s) => s.count);
   const sizeIndex = useGenerateStore((s) => s.sizeIndex);
@@ -74,6 +77,13 @@ export default function GenerateScreen() {
   useEffect(() => {
     void loadPresets();
   }, [loadPresets]);
+
+  // 스타일 목록 로딩 (T4.3) — 실패해도 생성은 가능(없음으로)
+  useEffect(() => {
+    stylesList()
+      .then((list) => useGenerateStore.getState().setStyles(list))
+      .catch(() => useGenerateStore.getState().setStyles([]));
+  }, []);
 
   // 키워드 변환 미리보기 (500ms 디바운스). 한글 없으면 로컬에서 즉시 처리.
   useEffect(() => {
@@ -133,6 +143,7 @@ export default function GenerateScreen() {
     try {
       const jobId = await generate({
         presetId: st.presetId,
+        styleId: st.styleId || undefined,
         keyword: trimmed,
         count: st.count,
         size: SIZE_OPTIONS[st.sizeIndex].size,
@@ -252,11 +263,38 @@ export default function GenerateScreen() {
 
         <section>
           <h2 className="mb-2 text-xs font-medium text-text-sub">스타일</h2>
-          <div className="flex items-center gap-2">
-            <span className="rounded-md border border-primary bg-surface-2 px-3 py-1.5 text-sm text-text">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              aria-pressed={styleId === ""}
+              onClick={() => useGenerateStore.getState().setStyleId("")}
+              className={`ease-out-ui rounded-md border px-3 py-1.5 text-sm transition-colors duration-150 ${
+                styleId === ""
+                  ? "border-primary bg-surface-2 text-text"
+                  : "border-border text-text-sub hover:bg-surface-2"
+              }`}
+            >
               없음
-            </span>
-            <span className="text-xs text-text-sub">에센스·LoRA는 스타일 화면에서 (준비 중)</span>
+            </button>
+            {styles.map((style) => (
+              <button
+                key={style.id}
+                type="button"
+                aria-pressed={styleId === style.id}
+                title={style.essencePrompt}
+                onClick={() => useGenerateStore.getState().setStyleId(style.id)}
+                className={`ease-out-ui max-w-40 truncate rounded-md border px-3 py-1.5 text-sm transition-colors duration-150 ${
+                  styleId === style.id
+                    ? "border-primary bg-surface-2 text-text"
+                    : "border-border text-text-sub hover:bg-surface-2"
+                }`}
+              >
+                {style.name}
+              </button>
+            ))}
+            {styles.length === 0 && (
+              <span className="text-xs text-text-sub">스타일 화면에서 만들 수 있어요</span>
+            )}
           </div>
         </section>
 
@@ -409,7 +447,11 @@ export default function GenerateScreen() {
                 {translation.warning && <p className="text-xs text-warn">{translation.warning}</p>}
                 {selectedPreset && (
                   <p className="break-all rounded-sm bg-surface-2 px-2 py-1.5 text-xs text-text-sub">
-                    {previewPrompt(selectedPreset, translation.translated)}
+                    {previewPrompt(
+                      selectedPreset,
+                      translation.translated,
+                      styles.find((s) => s.id === styleId)?.essencePrompt ?? "",
+                    )}
                   </p>
                 )}
               </div>

@@ -21,6 +21,7 @@ export function metaText(item: Generation): string {
 /** "같은 설정으로 다시 생성"이 생성 화면 폼에 채울 값 (04 §4.2). */
 export function regenFormState(item: Generation): {
   presetId: string;
+  styleId: string;
   keyword: string;
   seedInput: string;
   sizeIndex: number;
@@ -30,6 +31,8 @@ export function regenFormState(item: Generation): {
   );
   return {
     presetId: item.presetId ?? "",
+    // 스타일이 그새 삭제됐으면 생성 화면의 setStyles 정합화가 "없음"으로 되돌린다
+    styleId: item.styleId ?? "",
     keyword: item.keywordKo ?? "",
     seedInput: String(item.seed),
     // 히스토리의 크기가 현재 옵션에 없으면(폴백 하향 등) 기본 1:1로
