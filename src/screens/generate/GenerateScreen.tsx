@@ -11,12 +11,15 @@ import {
   generate,
   generateCancel,
   presetsGet,
+  translateKeyword,
   type GenDoneEvent,
   type GenErrorEvent,
   type GenProgressEvent,
+  type Translation,
 } from "../../lib/tauri";
 import { parseSeed } from "./genSession";
 import { COUNT_OPTIONS, SIZE_OPTIONS, presetLabel } from "./presetTypes";
+import { containsHangul, previewPrompt, translationSourceLabel } from "./translationPreview";
 import ResultGrid from "./ResultGrid";
 import { useGenerateStore } from "./store";
 
@@ -34,6 +37,8 @@ export default function GenerateScreen() {
 
   const [dataRoot, setDataRoot] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  // 고급 패널의 한→영 변환 미리보기 (디바운스, T2.3)
+  const [translation, setTranslation] = useState<Translation | null>(null);
   // ⌘↵ 연타로 invoke가 겹치지 않게 하는 가드 (start 반영 전 공백 구간)
   const submitting = useRef(false);
 
@@ -64,6 +69,39 @@ export default function GenerateScreen() {
   useEffect(() => {
     void loadPresets();
   }, [loadPresets]);
+
+  // 키워드 변환 미리보기 (500ms 디바운스). 한글 없으면 로컬에서 즉시 처리.
+  useEffect(() => {
+    const trimmed = keyword.trim();
+    if (trimmed === "") {
+      setTranslation(null);
+      return;
+    }
+    if (!containsHangul(trimmed)) {
+      setTranslation({ translated: trimmed, source: "notNeeded" });
+      return;
+    }
+    let stale = false;
+    const timer = setTimeout(() => {
+      translateKeyword(trimmed)
+        .then((t) => {
+          if (!stale) setTranslation(t);
+        })
+        .catch(() => {
+          if (!stale) {
+            setTranslation({
+              translated: trimmed,
+              source: "passthrough",
+              warning: "변환 미리보기를 불러오지 못했어요. 생성에는 영향이 없어요.",
+            });
+          }
+        });
+    }, 500);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [keyword]);
 
   // gen:// 이벤트 구독 — jobId 필터링은 genSession 순수 함수가 담당
   useEffect(() => {
@@ -304,9 +342,33 @@ export default function GenerateScreen() {
               }`}
             />
             {seedInvalid && <p className="mt-1 text-xs text-error">정수만 입력할 수 있어요.</p>}
-            <p className="mt-2 text-xs text-text-sub">
-              프롬프트 미리보기·변환 결과는 한→영 변환(T2.3)과 함께 제공돼요.
-            </p>
+
+            <h3 className="mb-1 mt-4 text-xs text-text-sub">변환·프롬프트 미리보기</h3>
+            {translation === null ? (
+              <p className="text-xs text-text-sub">
+                키워드를 입력하면 실제 사용될 영문 프롬프트를 보여드려요.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {translation.source !== "notNeeded" && (
+                  <p className="text-xs text-text">
+                    {keyword.trim()} → {translation.translated}
+                    {translationSourceLabel(translation.source) && (
+                      <span className="text-text-sub">
+                        {" "}
+                        · {translationSourceLabel(translation.source)}
+                      </span>
+                    )}
+                  </p>
+                )}
+                {translation.warning && <p className="text-xs text-warn">{translation.warning}</p>}
+                {selectedPreset && (
+                  <p className="break-all rounded-sm bg-surface-2 px-2 py-1.5 text-xs text-text-sub">
+                    {previewPrompt(selectedPreset, translation.translated)}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </details>
 

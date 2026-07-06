@@ -4,3 +4,4 @@ pub mod bootstrap;
 pub mod engine;
 pub mod generate;
 pub mod presets;
+pub mod translate;

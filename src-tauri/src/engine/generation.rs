@@ -126,12 +126,16 @@ pub async fn run_generation(
     cancel: &tokio::sync::watch::Receiver<bool>,
     mut on_update: impl FnMut(GenUpdate),
 ) -> Result<GenDone, AppError> {
-    // 1) 프리셋 로드 + 프롬프트 조립 (§4)
+    // 1) 프리셋 로드 + 한→영 변환(§4 ①②③, T2.3) + 프롬프트 조립 (§4)
     let presets = load_presets(data_root)?;
     let preset = find_preset(&presets, &req.preset_id)?;
+    let translation = crate::prompt::translate::translate_keyword(data_root, &req.keyword).await;
+    if let Some(warning) = &translation.warning {
+        on_update(GenUpdate::Notice(warning.clone()));
+    }
     let prompt = assemble_prompt(
         &preset.prefix,
-        &req.keyword,
+        &translation.translated,
         &StyleFragments::default(), // 스타일 연동은 T4.3/M6
         &preset.suffix,
     );

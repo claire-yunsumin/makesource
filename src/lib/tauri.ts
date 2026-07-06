@@ -143,3 +143,23 @@ export interface Preset {
 export function presetsGet(): Promise<Preset[]> {
   return invokeCommand<Preset[]>("presets_get");
 }
+
+// ---- translate (TAD §4, §5) ----
+
+/**
+ * 변환 경로: notNeeded(한글 없음) → dict(용어 사전) → argos(로컬 번역) →
+ * passthrough(실패, 원문 사용 + warning)
+ */
+export type TranslationSource = "notNeeded" | "dict" | "argos" | "passthrough";
+
+export interface Translation {
+  translated: string;
+  source: TranslationSource;
+  /** passthrough일 때 사용자 고지 문구 */
+  warning?: string;
+}
+
+/** 한→영 변환 미리보기 (고급 패널). 생성 파이프라인은 백엔드에서 같은 로직을 직접 수행. */
+export function translateKeyword(keyword: string): Promise<Translation> {
+  return invokeCommand<Translation>("translate_keyword", { keyword });
+}

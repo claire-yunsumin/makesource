@@ -3,4 +3,5 @@
 
 pub mod assemble;
 pub mod presets;
+pub mod translate;
 pub mod workflow;
