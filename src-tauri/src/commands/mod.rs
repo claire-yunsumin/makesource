@@ -2,6 +2,8 @@
 
 pub mod bootstrap;
 pub mod engine;
+pub mod export;
 pub mod generate;
+pub mod history;
 pub mod presets;
 pub mod translate;

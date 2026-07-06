@@ -8,10 +8,23 @@ interface ResultGridProps {
   dataRoot: string | null;
   /** 이미지 aria-label용 "키워드 · 프리셋" (04 §7) */
   altLabel: string;
+  /** ♥ 토글 (T2.4) */
+  onToggleFavorite: (id: string) => void;
+  /** PNG 다운로드 (T2.4) */
+  onDownload: (id: string) => void;
+  /** 시드 고정 — 고급 패널 시드 입력에 배치 시드를 채운다 (T2.4, F-1.5) */
+  onUseSeed: () => void;
 }
 
-/** 우측 결과 영역 (04 §4.1): 빈 상태 / 셀별 진행 오버레이 / 결과 2×2 그리드. */
-export default function ResultGrid({ session, dataRoot, altLabel }: ResultGridProps) {
+/** 우측 결과 영역 (04 §4.1): 빈 상태 / 셀별 진행 오버레이 / 결과 2×2 그리드 + hover 액션. */
+export default function ResultGrid({
+  session,
+  dataRoot,
+  altLabel,
+  onToggleFavorite,
+  onDownload,
+  onUseSeed,
+}: ResultGridProps) {
   if (session.phase === "generating") {
     const percent = Math.round(session.progress * 100);
     return (
@@ -63,14 +76,17 @@ export default function ResultGrid({ session, dataRoot, altLabel }: ResultGridPr
     );
   }
 
+  const actionButtonClass =
+    "ease-out-ui rounded-md bg-surface/90 px-2.5 py-1.5 text-xs text-text shadow-card transition-colors duration-150 hover:bg-surface-2 focus-visible:opacity-100";
+
   return (
     <div className="mx-auto grid w-full max-w-3xl grid-cols-2 gap-4">
-      {session.images.map((relPath) => {
-        const abs = dataRoot ? joinImagePath(dataRoot, relPath) : null;
+      {session.images.map((image) => {
+        const abs = dataRoot ? joinImagePath(dataRoot, image.path) : null;
         return (
           <div
-            key={relPath}
-            className="animate-grid-enter aspect-square overflow-hidden rounded-lg bg-surface-2 shadow-card"
+            key={image.id || image.path}
+            className="animate-grid-enter group relative aspect-square overflow-hidden rounded-lg bg-surface-2 shadow-card"
           >
             {abs ? (
               <img
@@ -84,6 +100,36 @@ export default function ResultGrid({ session, dataRoot, altLabel }: ResultGridPr
                 이미지를 불러오지 못했어요
               </div>
             )}
+
+            {/* hover/포커스 액션 (04 §4.1: [♥][⬇ PNG][시드 재생성]) */}
+            <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 p-2 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
+              <button
+                type="button"
+                aria-pressed={image.favorite}
+                aria-label={image.favorite ? "즐겨찾기 해제" : "즐겨찾기"}
+                onClick={() => onToggleFavorite(image.id)}
+                className={`${actionButtonClass} ${image.favorite ? "text-error" : ""}`}
+              >
+                {image.favorite ? "♥" : "♡"}
+              </button>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => onDownload(image.id)}
+                  className={actionButtonClass}
+                >
+                  ⬇ PNG
+                </button>
+                <button
+                  type="button"
+                  title={session.seed !== null ? `시드 ${session.seed}` : undefined}
+                  onClick={onUseSeed}
+                  className={actionButtonClass}
+                >
+                  시드 고정
+                </button>
+              </div>
+            </div>
           </div>
         );
       })}

@@ -9,9 +9,12 @@ import {
   parseSeed,
   requestCancel,
   startSession,
+  toggleFavorite,
+  type GenImage,
 } from "./genSession";
 
 const generating = () => startSession(INITIAL_SESSION, "job-1", 4);
+const img = (id: string, path: string, favorite = false): GenImage => ({ id, path, favorite });
 
 describe("startSession", () => {
   it("generating으로 전이하고 요청 장수를 셀 수로 기록한다", () => {
@@ -22,15 +25,17 @@ describe("startSession", () => {
     expect(s.progress).toBe(0);
   });
 
-  it("이전 결과 이미지는 유지하고 notice/error는 초기화한다", () => {
+  it("이전 결과 이미지·시드는 유지하고 notice/error는 초기화한다", () => {
     const prev = {
       ...INITIAL_SESSION,
-      images: ["images/a.png"],
+      images: [img("g0", "images/a.png")],
+      seed: 42,
       notice: "지난 고지",
       error: { code: "E_X", message: "x" },
     };
     const s = startSession(prev, "job-2", 2);
-    expect(s.images).toEqual(["images/a.png"]);
+    expect(s.images).toEqual([img("g0", "images/a.png")]);
+    expect(s.seed).toBe(42);
     expect(s.notice).toBeNull();
     expect(s.error).toBeNull();
   });
@@ -59,27 +64,29 @@ describe("applyProgress", () => {
 });
 
 describe("applyDone", () => {
-  it("idle로 복귀하고 결과 이미지를 교체한다", () => {
+  it("idle로 복귀하고 결과 이미지(id 매칭)·시드를 기록한다", () => {
     const s = applyDone(generating(), {
       jobId: "job-1",
       generationIds: ["g1", "g2"],
       imagePaths: ["images/1.png", "images/2.png"],
+      seed: 1234,
     });
     expect(s.phase).toBe("idle");
     expect(s.jobId).toBeNull();
-    expect(s.images).toEqual(["images/1.png", "images/2.png"]);
+    expect(s.images).toEqual([img("g1", "images/1.png"), img("g2", "images/2.png")]);
+    expect(s.seed).toBe(1234);
     expect(s.cells).toBe(0);
   });
 
   it("폴백 고지는 완료 후에도 유지한다", () => {
     let s = applyProgress(generating(), { jobId: "job-1", progress: 0.3, notice: "폴백 고지" });
-    s = applyDone(s, { jobId: "job-1", generationIds: [], imagePaths: [] });
+    s = applyDone(s, { jobId: "job-1", generationIds: [], imagePaths: [], seed: 1 });
     expect(s.notice).toBe("폴백 고지");
   });
 
   it("다른 잡의 완료는 무시한다", () => {
     const s = generating();
-    expect(applyDone(s, { jobId: "other", generationIds: [], imagePaths: [] })).toBe(s);
+    expect(applyDone(s, { jobId: "other", generationIds: [], imagePaths: [], seed: 1 })).toBe(s);
   });
 });
 
@@ -94,7 +101,7 @@ describe("applyError", () => {
   });
 
   it("E_CANCELED는 에러가 아니라 조용한 idle 복귀 (이전 결과 유지)", () => {
-    const withImages = { ...generating(), images: ["images/a.png"] };
+    const withImages = { ...generating(), images: [img("g0", "images/a.png")] };
     const s = applyError(requestCancel(withImages), {
       jobId: "job-1",
       error: { code: "E_CANCELED", message: "취소되었어요." },
@@ -102,12 +109,37 @@ describe("applyError", () => {
     expect(s.phase).toBe("idle");
     expect(s.error).toBeNull();
     expect(s.cancelRequested).toBe(false);
-    expect(s.images).toEqual(["images/a.png"]);
+    expect(s.images).toEqual([img("g0", "images/a.png")]);
   });
 
   it("다른 잡의 에러는 무시한다", () => {
     const s = generating();
     expect(applyError(s, { jobId: "other", error: { code: "E_X", message: "x" } })).toBe(s);
+  });
+});
+
+describe("toggleFavorite", () => {
+  const done = () =>
+    applyDone(generating(), {
+      jobId: "job-1",
+      generationIds: ["g1", "g2"],
+      imagePaths: ["images/1.png", "images/2.png"],
+      seed: 7,
+    });
+
+  it("해당 id만 토글한다", () => {
+    const s = toggleFavorite(done(), "g2");
+    expect(s.images).toEqual([img("g1", "images/1.png"), img("g2", "images/2.png", true)]);
+  });
+
+  it("두 번 토글하면 원상복구 (실패 롤백 경로)", () => {
+    const s = toggleFavorite(toggleFavorite(done(), "g1"), "g1");
+    expect(s.images[0].favorite).toBe(false);
+  });
+
+  it("없는 id는 아무것도 바꾸지 않는다", () => {
+    const s = done();
+    expect(toggleFavorite(s, "nope").images).toEqual(s.images);
   });
 });
 

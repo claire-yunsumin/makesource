@@ -60,6 +60,8 @@ pub struct GenDone {
     pub generation_ids: Vec<String>,
     /// 앱 데이터 루트 기준 상대 경로 목록
     pub image_paths: Vec<String>,
+    /// 이 배치에 사용된 시드 (시드 고정 재생성 — T2.4, F-1.5)
+    pub seed: i64,
 }
 
 /// 설치된 체크포인트 해석: SDXL 우선, 없으면 첫 .safetensors (light 프로파일 폴백).
@@ -262,6 +264,7 @@ pub async fn run_generation(
         job_id: job_id.to_string(),
         generation_ids: ids,
         image_paths: paths,
+        seed,
     })
 }
 

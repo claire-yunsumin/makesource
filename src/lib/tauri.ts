@@ -93,6 +93,8 @@ export interface GenDoneEvent {
   generationIds: string[];
   /** 앱 데이터 루트 기준 상대 경로 */
   imagePaths: string[];
+  /** 이 배치에 사용된 시드 (시드 고정 재생성 — F-1.5) */
+  seed: number;
 }
 
 /** gen://error 페이로드 */
@@ -162,4 +164,24 @@ export interface Translation {
 /** 한→영 변환 미리보기 (고급 패널). 생성 파이프라인은 백엔드에서 같은 로직을 직접 수행. */
 export function translateKeyword(keyword: string): Promise<Translation> {
   return invokeCommand<Translation>("translate_keyword", { keyword });
+}
+
+// ---- history / export (TAD §5, T2.4) ----
+
+/** 즐겨찾기 토글. 프론트는 낙관적으로 갱신하고 실패 시 되돌린다. */
+export function historyToggleFavorite(id: string): Promise<void> {
+  return invokeCommand<void>("history_toggle_favorite", { id });
+}
+
+export interface ExportImageArgs {
+  id: string;
+  /** T2.4는 png만 — jpg/webp는 갤러리 상세(T3.2)에서 */
+  format: "png" | "jpg" | "webp";
+  transparent?: boolean;
+  destDir: string;
+}
+
+/** 이미지 내보내기. 저장된 절대 경로를 돌려준다. */
+export function exportImage(args: ExportImageArgs): Promise<string> {
+  return invokeCommand<string>("export_image", { args });
 }
