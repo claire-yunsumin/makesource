@@ -12,6 +12,7 @@ export default function SidebarNav() {
   return (
     <nav
       aria-label={t("nav.aria")}
+      data-tour="nav"
       className="flex h-full w-[72px] flex-col items-center border-r border-border bg-surface py-3"
     >
       <ul className="flex flex-1 flex-col gap-1">
@@ -21,6 +22,7 @@ export default function SidebarNav() {
               to={item.path}
               aria-label={t(item.labelKey)}
               title={t(item.labelKey)}
+              data-tour={item.path === "/gallery" ? "nav-gallery" : undefined}
               className={({ isActive }) =>
                 [
                   "flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-md transition-colors",

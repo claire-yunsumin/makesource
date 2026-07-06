@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { useNavigate } from "react-router-dom";
 import Toast from "../../components/Toast";
 import { useLocale } from "../../lib/i18n";
+import { useOnboarding } from "../../stores/onboarding";
 import {
   cacheClear,
   cacheStats,
@@ -45,6 +47,7 @@ export default function SettingsScreen() {
   const [version, setVersion] = useState("");
   const [toast, setToast] = useState<{ message: string; tone: "error" | "success" } | null>(null);
   const setLocale = useLocale((s) => s.setLocale);
+  const navigate = useNavigate();
 
   const load = useCallback(() => {
     modelsList()
@@ -253,9 +256,21 @@ export default function SettingsScreen() {
 
       <Section title="정보">
         <div className="space-y-4">
-          <p className="text-sm text-text">
-            LocalBrush <span className="text-text-sub">{version && `버전 ${version}`}</span>
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-text">
+              LocalBrush <span className="text-text-sub">{version && `버전 ${version}`}</span>
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                useOnboarding.getState().start();
+                navigate("/generate");
+              }}
+              className={`${buttonClass} border border-border text-text-sub hover:bg-surface-2`}
+            >
+              가이드 다시 보기
+            </button>
+          </div>
           <div>
             <h3 className="mb-1 text-xs font-medium text-text-sub">오픈소스 라이선스</h3>
             {licenses.length === 0 ? (
