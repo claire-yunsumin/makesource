@@ -70,6 +70,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 | [docs/05_구현_백로그.md](docs/05_구현_백로그.md) | 태스크와 완료 기준(AC) |
 | [docs/06_결정기록.md](docs/06_결정기록.md) | 주요 기술·운영 결정 기록과 미결정 사항 추적 |
 | [docs/07_프리셋_프롬프트_연구.md](docs/07_프리셋_프롬프트_연구.md) | 프리셋 6종 프롬프트 실험 기록 |
+| [docs/08_수동_QA_체크리스트.md](docs/08_수동_QA_체크리스트.md) | 배포 전 실기기(Apple Silicon) 수동 검증 체크리스트 |
 
 기여 규칙(브랜치 전략, 커밋 컨벤션, IPC 계약 등)은 [CLAUDE.md](CLAUDE.md)를 참고하세요.
 
