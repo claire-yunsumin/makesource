@@ -99,6 +99,7 @@ async fn main() {
 
     let req = GenerateRequest {
         preset_id: "storybook".to_string(),
+        style_id: None,
         keyword,
         count,
         size: Some(size.unwrap_or((1024, 1024))),

@@ -13,7 +13,11 @@ use crate::db::Db;
 use crate::error::AppError;
 use crate::prompt::assemble::{assemble_negative, assemble_prompt, StyleFragments};
 use crate::prompt::presets::{find_preset, load_presets};
-use crate::prompt::workflow::{apply_slots, build_prompt_payload, WorkflowParams, SDXL_BASE};
+use crate::prompt::workflow::{
+    apply_slots, build_prompt_payload, IpAdapterParams, LoraParams, WorkflowParams, SDXL_BASE,
+    SDXL_IPADAPTER, SDXL_LORA,
+};
+use crate::styles::{load_styles as load_styles_file, Style};
 
 use super::client;
 use super::fallback::{self, Attempt};
@@ -31,6 +35,8 @@ pub enum GenUpdate {
 #[derive(Debug, Clone)]
 pub struct GenerateRequest {
     pub preset_id: String,
+    /// 에센스/LoRA 스타일 (T4.3)
+    pub style_id: Option<String>,
     pub keyword: String,
     pub count: u32,
     /// (width, height). None이면 프리셋 기본값
@@ -62,6 +68,93 @@ pub struct GenDone {
     pub image_paths: Vec<String>,
     /// 이 배치에 사용된 시드 (시드 고정 재생성 — T2.4, F-1.5)
     pub seed: i64,
+}
+
+/// 스타일이 프롬프트에 기여하는 조각 (TAD §4 — 트리거워드·에센스).
+pub fn style_fragments(style: Option<&Style>) -> StyleFragments {
+    match style {
+        Some(s) if s.kind == "essence" => StyleFragments {
+            trigger_word: None,
+            essence_prompt: s.essence_prompt.clone(),
+        },
+        Some(s) if s.kind == "lora" => StyleFragments {
+            trigger_word: s.trigger_word.clone(),
+            essence_prompt: None,
+        },
+        _ => StyleFragments::default(),
+    }
+}
+
+/// 이번 시도에 쓸 워크플로 템플릿·주입 파라미터 (T4.3, 순수 — 테스트).
+/// IP-Adapter/LoRA는 SDXL 전용이라 SD1.5 폴백(stage 2)에서는 base로 떼고
+/// 사용자 고지 문구를 함께 돌려준다. 에센스 프롬프트(텍스트)는 유지된다.
+#[allow(clippy::type_complexity)]
+pub fn plan_style_for_attempt(
+    style: Option<&Style>,
+    ip_image: Option<&str>,
+    sd15_fallback: bool,
+) -> (
+    &'static str,
+    Option<IpAdapterParams>,
+    Option<LoraParams>,
+    Option<String>,
+) {
+    let Some(style) = style else {
+        return (SDXL_BASE, None, None, None);
+    };
+    if sd15_fallback {
+        return (
+            SDXL_BASE,
+            None,
+            None,
+            Some("가벼운 모델에서는 스타일 참조를 뺀 채 생성했어요.".to_string()),
+        );
+    }
+    match style.kind.as_str() {
+        "essence" => match ip_image {
+            Some(image) => (
+                SDXL_IPADAPTER,
+                Some(IpAdapterParams {
+                    image: image.to_string(),
+                    weight: style.ip_adapter_weight.unwrap_or(0.6),
+                }),
+                None,
+                None,
+            ),
+            // 참조 이미지가 없으면 에센스 프롬프트만으로 (base)
+            None => (SDXL_BASE, None, None, None),
+        },
+        "lora" => match &style.lora_path {
+            Some(path) => {
+                // WorkflowParams는 models/loras/ 기준 파일명을 받는다 (TAD §6)
+                let lora_name = path.rsplit('/').next().unwrap_or(path.as_str()).to_string();
+                (
+                    SDXL_LORA,
+                    None,
+                    Some(LoraParams {
+                        lora_name,
+                        weight: style.lora_weight.unwrap_or(0.8),
+                    }),
+                    None,
+                )
+            }
+            None => (SDXL_BASE, None, None, None),
+        },
+        _ => (SDXL_BASE, None, None, None),
+    }
+}
+
+/// 에센스 참조 이미지 1장을 ComfyUI input 폴더로 복사하고 파일명을 돌려준다.
+/// (--base-directory 기준 input/ — LoadImage 노드가 여기서 읽는다)
+pub fn prepare_ip_reference(data_root: &Path, style: &Style) -> Option<String> {
+    let rel = style.reference_images.first()?;
+    let src = data_root.join(rel);
+    let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("png");
+    let name = format!("style-{}.{ext}", style.id);
+    let input_dir = data_root.join("input");
+    std::fs::create_dir_all(&input_dir).ok()?;
+    std::fs::copy(&src, input_dir.join(&name)).ok()?;
+    Some(name)
 }
 
 /// 설치된 체크포인트 해석: SDXL 우선, 없으면 첫 .safetensors (light 프로파일 폴백).
@@ -128,9 +221,27 @@ pub async fn run_generation(
     cancel: &tokio::sync::watch::Receiver<bool>,
     mut on_update: impl FnMut(GenUpdate),
 ) -> Result<GenDone, AppError> {
-    // 1) 프리셋 로드 + 한→영 변환(§4 ①②③, T2.3) + 프롬프트 조립 (§4)
+    // 1) 프리셋·스타일 로드 + 한→영 변환(§4 ①②③, T2.3) + 프롬프트 조립 (§4)
     let presets = load_presets(data_root)?;
     let preset = find_preset(&presets, &req.preset_id)?;
+    let style: Option<Style> = match req.style_id.as_deref() {
+        Some(style_id) => Some(
+            load_styles_file(data_root)?
+                .styles
+                .into_iter()
+                .find(|s| s.id == style_id)
+                .ok_or_else(|| {
+                    AppError::new("E_STYLE_NOT_FOUND", "선택한 스타일을 찾을 수 없어요.")
+                })?,
+        ),
+        None => None,
+    };
+    // 에센스 참조 이미지를 엔진 input 폴더로 준비 (T4.3)
+    let ip_image = style
+        .as_ref()
+        .filter(|s| s.kind == "essence")
+        .and_then(|s| prepare_ip_reference(data_root, s));
+
     let translation = crate::prompt::translate::translate_keyword(data_root, &req.keyword).await;
     if let Some(warning) = &translation.warning {
         on_update(GenUpdate::Notice(warning.clone()));
@@ -138,7 +249,7 @@ pub async fn run_generation(
     let prompt = assemble_prompt(
         &preset.prefix,
         &translation.translated,
-        &StyleFragments::default(), // 스타일 연동은 T4.3/M6
+        &style_fragments(style.as_ref()),
         &preset.suffix,
     );
     let negative = assemble_negative(&preset.negative, "");
@@ -155,7 +266,17 @@ pub async fn run_generation(
         checkpoint: resolve_checkpoint(data_root),
         stage: 0,
     };
+    let mut style_drop_notified = false;
     let (images, attempt) = loop {
+        // 스타일 경로 (T4.3): SD1.5 폴백(stage 2)에서는 SDXL 전용 어댑터를 뗀다
+        let (template, ipadapter, lora, drop_notice) =
+            plan_style_for_attempt(style.as_ref(), ip_image.as_deref(), attempt.stage >= 2);
+        if let Some(notice) = drop_notice {
+            if !style_drop_notified {
+                style_drop_notified = true;
+                on_update(GenUpdate::Notice(notice));
+            }
+        }
         let params = WorkflowParams {
             prompt: prompt.clone(),
             negative: negative.clone(),
@@ -166,10 +287,10 @@ pub async fn run_generation(
             height: attempt.height,
             batch: req.count.clamp(1, 4),
             checkpoint: attempt.checkpoint.clone(),
-            lora: None,
-            ipadapter: None,
+            lora,
+            ipadapter,
         };
-        let workflow = apply_slots(SDXL_BASE, &params)?;
+        let workflow = apply_slots(template, &params)?;
         let payload = build_prompt_payload(workflow, job_id);
 
         let result = async {
@@ -245,7 +366,7 @@ pub async fn run_generation(
             negative: Some(negative.clone()),
             preset_id: Some(preset.id.clone()),
             preset_version: Some(preset.version as i64),
-            style_id: None,
+            style_id: req.style_id.clone(),
             seed,
             steps: Some(preset.params.steps as i64),
             cfg: Some(preset.params.cfg),
@@ -284,6 +405,98 @@ mod tests {
     fn random_seed_is_nonnegative_and_varies() {
         let a = random_seed();
         assert!(a >= 0);
+    }
+
+    fn essence_style() -> crate::styles::Style {
+        crate::styles::Style {
+            id: "s1".to_string(),
+            name: "브랜드".to_string(),
+            kind: "essence".to_string(),
+            essence_prompt: Some("flat color, simple background".to_string()),
+            reference_images: vec!["styles/s1/ref-0.png".to_string()],
+            ip_adapter_weight: Some(0.7),
+            lora_path: None,
+            lora_weight: None,
+            trigger_word: None,
+            thumb: None,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn style_plan_selects_templates_and_params() {
+        use crate::prompt::workflow::{SDXL_BASE, SDXL_IPADAPTER, SDXL_LORA};
+
+        // 스타일 없음 → base
+        let (t, ip, lora, notice) = plan_style_for_attempt(None, None, false);
+        assert_eq!(t, SDXL_BASE);
+        assert!(ip.is_none() && lora.is_none() && notice.is_none());
+
+        // 에센스 + 참조 이미지 → ipadapter 템플릿 + weight 반영
+        let style = essence_style();
+        let (t, ip, _, _) = plan_style_for_attempt(Some(&style), Some("style-s1.png"), false);
+        assert_eq!(t, SDXL_IPADAPTER);
+        let ip = ip.unwrap();
+        assert_eq!(ip.image, "style-s1.png");
+        assert_eq!(ip.weight, 0.7);
+
+        // 에센스인데 참조 이미지가 준비 안 됨 → base (에센스 프롬프트만)
+        let (t, ip, _, _) = plan_style_for_attempt(Some(&style), None, false);
+        assert_eq!(t, SDXL_BASE);
+        assert!(ip.is_none());
+
+        // SD1.5 폴백 → base + 고지 (IP-Adapter는 SDXL 전용)
+        let (t, ip, _, notice) = plan_style_for_attempt(Some(&style), Some("x.png"), true);
+        assert_eq!(t, SDXL_BASE);
+        assert!(ip.is_none());
+        assert!(notice.unwrap().contains("스타일 참조"));
+
+        // LoRA 스타일 → lora 템플릿 + 파일명·weight
+        let mut lora_style = essence_style();
+        lora_style.kind = "lora".to_string();
+        lora_style.lora_path = Some("models/loras/brand_v1.safetensors".to_string());
+        lora_style.lora_weight = Some(0.9);
+        let (t, _, lora, _) = plan_style_for_attempt(Some(&lora_style), None, false);
+        assert_eq!(t, SDXL_LORA);
+        let lora = lora.unwrap();
+        assert_eq!(lora.lora_name, "brand_v1.safetensors");
+        assert_eq!(lora.weight, 0.9);
+    }
+
+    #[test]
+    fn style_fragments_by_kind() {
+        let essence = essence_style();
+        let frags = style_fragments(Some(&essence));
+        assert_eq!(
+            frags.essence_prompt.as_deref(),
+            Some("flat color, simple background")
+        );
+        assert!(frags.trigger_word.is_none());
+
+        let mut lora = essence_style();
+        lora.kind = "lora".to_string();
+        lora.trigger_word = Some("brandstyle".to_string());
+        let frags = style_fragments(Some(&lora));
+        assert_eq!(frags.trigger_word.as_deref(), Some("brandstyle"));
+        assert!(frags.essence_prompt.is_none());
+
+        assert!(style_fragments(None).essence_prompt.is_none());
+    }
+
+    #[test]
+    fn ip_reference_is_copied_into_input_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("styles/s1")).unwrap();
+        std::fs::write(dir.path().join("styles/s1/ref-0.png"), b"img").unwrap();
+
+        let name = prepare_ip_reference(dir.path(), &essence_style()).unwrap();
+        assert_eq!(name, "style-s1.png");
+        assert!(dir.path().join("input/style-s1.png").exists());
+
+        // 참조 이미지가 없는 스타일 → None
+        let mut empty = essence_style();
+        empty.reference_images.clear();
+        assert!(prepare_ip_reference(dir.path(), &empty).is_none());
     }
 
     #[test]

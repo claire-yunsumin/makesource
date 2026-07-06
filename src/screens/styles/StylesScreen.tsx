@@ -4,7 +4,9 @@ import { dataDir } from "@tauri-apps/api/path";
 import Toast from "../../components/Toast";
 import { isAppError, type AppError } from "../../lib/appError";
 import { APP_DATA_DIR_NAME, joinImagePath } from "../../lib/imagePath";
+import { useNavigate } from "react-router-dom";
 import { styleDelete, stylesList, type Style } from "../../lib/tauri";
+import { useGenerateStore } from "../generate/store";
 import EssenceWizard from "./EssenceWizard";
 
 /**
@@ -18,6 +20,7 @@ export default function StylesScreen() {
   const [dataRoot, setDataRoot] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "error" | "success" } | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     dataDir()
@@ -130,9 +133,12 @@ export default function StylesScreen() {
                   <div className="flex gap-1">
                     <button
                       type="button"
-                      disabled
-                      title="생성 연동은 곧 제공돼요 (IP-Adapter 연결)"
-                      className="ease-out-ui flex-1 rounded-md border border-border px-2 py-1 text-xs text-text-sub opacity-50"
+                      onClick={() => {
+                        // 생성 화면 스타일 선택에 반영하고 이동 (T4.3)
+                        useGenerateStore.setState({ styleId: style.id });
+                        navigate("/generate");
+                      }}
+                      className="ease-out-ui flex-1 rounded-md border border-border px-2 py-1 text-xs text-text transition-colors duration-150 hover:bg-surface"
                     >
                       생성에 사용
                     </button>
