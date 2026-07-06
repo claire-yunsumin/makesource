@@ -15,6 +15,7 @@ use serde::Serialize;
 use crate::error::AppError;
 
 pub mod download;
+pub mod kohya;
 pub mod models;
 pub mod state;
 
@@ -48,11 +49,12 @@ impl Bootstrapper {
         self.data_root.join("bootstrap.state.json")
     }
 
-    fn uv_bin(&self) -> PathBuf {
+    /// kohya(T6.1)도 같은 venv를 재사용하기 위해 crate 내부에 공개.
+    pub(crate) fn uv_bin(&self) -> PathBuf {
         self.data_root.join("runtime/uv/uv")
     }
 
-    fn venv_python(&self) -> PathBuf {
+    pub(crate) fn venv_python(&self) -> PathBuf {
         self.data_root.join("runtime/venv/bin/python")
     }
 
@@ -74,7 +76,7 @@ impl Bootstrapper {
     }
 
     /// 서브프로세스 실행, stdout/stderr를 로그로. 실패 시 AppError.
-    async fn run_cmd(
+    pub(crate) async fn run_cmd(
         &self,
         program: &Path,
         args: &[&str],
