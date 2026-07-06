@@ -265,7 +265,7 @@ export default function GenerateScreen() {
           </div>
         )}
 
-        <section>
+        <section data-tour="style">
           <h2 className="mb-2 text-xs font-medium text-text-sub">스타일</h2>
           <div className="flex flex-wrap items-center gap-1.5">
             <button
@@ -302,7 +302,7 @@ export default function GenerateScreen() {
           </div>
         </section>
 
-        <section>
+        <section data-tour="preset">
           <h2 className="mb-2 text-xs font-medium text-text-sub">이미지 타입</h2>
           {presetsLoading ? (
             <div className="grid grid-cols-2 gap-2" aria-hidden>
@@ -353,7 +353,7 @@ export default function GenerateScreen() {
           )}
         </section>
 
-        <section>
+        <section data-tour="keyword">
           <label htmlFor="gen-keyword" className="mb-2 block text-xs font-medium text-text-sub">
             키워드
           </label>
@@ -463,7 +463,7 @@ export default function GenerateScreen() {
           </div>
         </details>
 
-        <div className="mt-auto pt-2">
+        <div data-tour="generate" className="mt-auto pt-2">
           {generating ? (
             <button
               type="button"
