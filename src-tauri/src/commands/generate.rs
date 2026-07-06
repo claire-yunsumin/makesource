@@ -60,10 +60,28 @@ pub async fn generate(
             .data_dir()
             .map_err(|e| AppError::with_detail("E_PATH", "앱 데이터 폴더를 찾지 못했어요.", e))?,
     );
-    let base_url = app
+    let engine = app
         .try_state::<crate::commands::engine::Engine>()
-        .map(|e| e.config.base_url())
         .ok_or_else(|| AppError::new("E_STATE", "엔진 상태를 찾을 수 없어요."))?;
+
+    // 엔진 준비 가드 (04 §6: 원인 + 다음 행동을 정확히) — 미설치/미기동을
+    // 생성 중 네트워크 오류("네트워크 연결에 문제가 있어요")로 뭉뚱그리지 않는다
+    if !engine.config.is_installed() {
+        return Err(AppError::new(
+            "E_ENGINE_NOT_INSTALLED",
+            "AI 엔진이 아직 설치되지 않았어요. 처음 사용 설정(엔진 설치)을 마치면 생성할 수 있어요.",
+        ));
+    }
+    let health =
+        crate::engine::check_health(&engine.manager, &engine.client, &engine.config.health_url())
+            .await;
+    if !health.running {
+        return Err(AppError::new(
+            "E_ENGINE_NOT_RUNNING",
+            "엔진이 응답하지 않아요. 잠시 후 다시 시도하거나 앱을 재시작해 주세요.",
+        ));
+    }
+    let base_url = engine.config.base_url();
 
     let req = GenerateRequest {
         preset_id: args.preset_id,
