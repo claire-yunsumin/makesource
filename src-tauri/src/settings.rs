@@ -11,16 +11,27 @@ use serde::{Deserialize, Serialize};
 /// 기본 안전 네거티브 (설정에서 편집 가능).
 pub const DEFAULT_SAFE_NEGATIVE: &str = "nsfw, nudity, gore, violence";
 
+/// UI 언어 (04 §4.5, T7.2). 프론트 i18n 사전과 동기.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Language {
+    #[default]
+    Ko,
+    En,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppSettings {
     pub safe_negative: String,
+    pub language: Language,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             safe_negative: DEFAULT_SAFE_NEGATIVE.to_string(),
+            language: Language::default(),
         }
     }
 }
@@ -63,9 +74,24 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let s = AppSettings {
             safe_negative: "watermark, text".to_string(),
+            language: Language::En,
         };
         s.save(dir.path()).unwrap();
         assert_eq!(AppSettings::load(dir.path()), s);
+    }
+
+    #[test]
+    fn t7_1_settings_file_without_language_defaults_to_ko() {
+        // T7.1이 쓴 settings.json(언어 필드 없음)도 그대로 읽혀야 한다
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            settings_path(dir.path()),
+            r#"{"safeNegative": "watermark"}"#,
+        )
+        .unwrap();
+        let s = AppSettings::load(dir.path());
+        assert_eq!(s.safe_negative, "watermark");
+        assert_eq!(s.language, Language::Ko);
     }
 
     #[test]

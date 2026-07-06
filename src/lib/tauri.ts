@@ -275,10 +275,14 @@ export function trainingCancel(jobId: string): Promise<void> {
 
 // ---- settings (TAD §5, T7.1) ----
 
+/** UI 언어 (04 §4.5, T7.2). */
+export type Language = "ko" | "en";
+
 /** settings.json (TAD §3). 없거나 손상 시 백엔드가 기본값을 돌려준다. */
 export interface AppSettings {
   /** 전역 안전 네거티브 — 생성 시 preset.negative 뒤에 붙는다 */
   safeNegative: string;
+  language: Language;
 }
 
 export function settingsGet(): Promise<AppSettings> {

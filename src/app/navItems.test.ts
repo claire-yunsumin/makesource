@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { I18N_MESSAGES } from "../lib/i18n";
 import { NAV_ITEMS } from "./navItems";
 
 describe("NAV_ITEMS", () => {
@@ -12,9 +13,10 @@ describe("NAV_ITEMS", () => {
     paths.forEach((p) => expect(p.startsWith("/")).toBe(true));
   });
 
-  it("모든 항목에 라벨과 글리프가 있다", () => {
+  it("모든 항목의 라벨 키가 사전에 있고 글리프가 있다", () => {
     NAV_ITEMS.forEach((i) => {
-      expect(i.label.length).toBeGreaterThan(0);
+      expect(I18N_MESSAGES.ko[i.labelKey]).toBeTruthy();
+      expect(I18N_MESSAGES.en[i.labelKey]).toBeTruthy();
       expect(i.glyph.length).toBeGreaterThan(0);
     });
   });

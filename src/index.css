@@ -49,6 +49,12 @@ body,
   animation: grid-enter 200ms cubic-bezier(0, 0, 0.2, 1);
 }
 
+/* 04 §7: 포커스 링 유지 — 개별 클래스가 outline을 끄지 않는 한 토큰 색으로 통일 */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 body {
   margin: 0;
   font-family:
