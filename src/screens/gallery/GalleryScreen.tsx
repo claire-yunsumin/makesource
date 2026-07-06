@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { dataDir, downloadDir } from "@tauri-apps/api/path";
 import { useNavigate } from "react-router-dom";
@@ -164,6 +165,19 @@ export default function GalleryScreen() {
     [navigate],
   );
 
+  // Finder/타 앱으로 드래그 아웃 (T3.4) — HTML5 드래그를 취소하고 네이티브 드래그로
+  const handleDragStart = useCallback(
+    (e: React.DragEvent, item: Generation) => {
+      e.preventDefault();
+      const abs = dataRoot ? joinImagePath(dataRoot, item.imagePath) : null;
+      if (!abs) return;
+      startDrag({ item: [abs], icon: abs }).catch(() => {
+        setToast({ message: "드래그를 시작하지 못했어요.", tone: "error" });
+      });
+    },
+    [dataRoot],
+  );
+
   const selected = selectedId !== null ? (items.find((g) => g.id === selectedId) ?? null) : null;
   const hasFilters = debouncedQuery !== "" || favoriteOnly;
 
@@ -235,9 +249,11 @@ export default function GalleryScreen() {
             <button
               key={item.id}
               type="button"
+              draggable
+              onDragStart={(e) => handleDragStart(e, item)}
               onClick={() => setSelectedId(item.id)}
               aria-label={`${label} 상세 보기`}
-              className="ease-out-ui mb-4 block w-full break-inside-avoid overflow-hidden rounded-lg bg-surface-2 text-left shadow-card transition-opacity duration-150 hover:opacity-90"
+              className="ease-out-ui mb-4 block w-full cursor-grab break-inside-avoid overflow-hidden rounded-lg bg-surface-2 text-left shadow-card transition-opacity duration-150 hover:opacity-90"
             >
               {abs ? (
                 <img
