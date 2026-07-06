@@ -207,6 +207,24 @@ impl Db {
             .await?;
         Ok(())
     }
+
+    /// 학습 잡 종료 기록 (T6.3): done|failed|canceled + error/finished_at.
+    pub async fn finish_training_job(
+        &self,
+        id: &str,
+        status: &str,
+        error: Option<&str>,
+        finished_at: i64,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE training_jobs SET status = ?, error = ?, finished_at = ? WHERE id = ?")
+            .bind(status)
+            .bind(error)
+            .bind(finished_at)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

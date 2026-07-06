@@ -34,6 +34,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # Finder 드래그 아웃 (T3.4, 04 §4.2) — MIT (CrabNebula)
 tauri-plugin-drag = "2.1.1"
 tauri-plugin-dialog = "2"
+toml = "0.8"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

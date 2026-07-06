@@ -1,0 +1,40 @@
+# LoRA 학습 프로파일 3종 (TAD §8, 04 §4.3 ③ — 빠름/표준/고품질).
+# kohya sd-scripts sdxl_train_network.py 인자로 매핑된다 (training/profiles.rs).
+# repeats는 데이터셋 폴더 이름 {repeats}_{trigger}에 쓰인다 (kohya 규약, D-009).
+
+[fast]
+label_ko = "빠름"
+# 30장 기준 약 30분~1시간 (M6 AC 기준 프로파일)
+estimate_ko = "약 30분~1시간"
+max_train_epochs = 4
+network_dim = 8
+network_alpha = 4
+learning_rate = 1e-4
+repeats = 10
+resolution = 1024
+train_batch_size = 1
+sample_every_n_epochs = 1
+
+[standard]
+label_ko = "표준"
+estimate_ko = "약 1~3시간"
+max_train_epochs = 8
+network_dim = 16
+network_alpha = 8
+learning_rate = 1e-4
+repeats = 10
+resolution = 1024
+train_batch_size = 1
+sample_every_n_epochs = 1
+
+[quality]
+label_ko = "고품질"
+estimate_ko = "약 3~6시간"
+max_train_epochs = 12
+network_dim = 32
+network_alpha = 16
+learning_rate = 5e-5
+repeats = 12
+resolution = 1024
+train_batch_size = 1
+sample_every_n_epochs = 2
