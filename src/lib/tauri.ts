@@ -273,6 +273,63 @@ export function trainingCancel(jobId: string): Promise<void> {
   return invokeCommand<void>("training_cancel", { jobId });
 }
 
+// ---- settings (TAD §5, T7.1) ----
+
+/** settings.json (TAD §3). 없거나 손상 시 백엔드가 기본값을 돌려준다. */
+export interface AppSettings {
+  /** 전역 안전 네거티브 — 생성 시 preset.negative 뒤에 붙는다 */
+  safeNegative: string;
+}
+
+export function settingsGet(): Promise<AppSettings> {
+  return invokeCommand<AppSettings>("settings_get");
+}
+
+export function settingsSave(settings: AppSettings): Promise<void> {
+  return invokeCommand<void>("settings_save", { settings });
+}
+
+/** models/ 아래 설치된 모델 한 항목 (파일 단위 또는 보조 모델은 폴더 단위). */
+export interface ModelEntry {
+  name: string;
+  /** models/ 아래 폴더명: checkpoints | loras | ipadapter | clip_vision | argos | rembg | hf */
+  category: string;
+  sizeBytes: number;
+}
+
+export function modelsList(): Promise<ModelEntry[]> {
+  return invokeCommand<ModelEntry[]>("models_list");
+}
+
+export interface CacheStats {
+  sizeBytes: number;
+}
+
+/** 캐시(models/hf — 재다운로드 가능한 분석 모델 캐시) 크기. */
+export function cacheStats(): Promise<CacheStats> {
+  return invokeCommand<CacheStats>("cache_stats");
+}
+
+export interface CacheClearResult {
+  freedBytes: number;
+}
+
+export function cacheClear(): Promise<CacheClearResult> {
+  return invokeCommand<CacheClearResult>("cache_clear");
+}
+
+/** 오픈소스 라이선스 BOM 항목 (resources/licenses.json). */
+export interface LicenseEntry {
+  name: string;
+  license: string;
+  url: string;
+  role: string;
+}
+
+export function licensesGet(): Promise<LicenseEntry[]> {
+  return invokeCommand<LicenseEntry[]>("licenses_get");
+}
+
 // ---- translate (TAD §4, §5) ----
 
 /**

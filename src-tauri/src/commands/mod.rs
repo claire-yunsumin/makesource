@@ -7,6 +7,7 @@ pub mod export;
 pub mod generate;
 pub mod history;
 pub mod presets;
+pub mod settings;
 pub mod styles;
 pub mod training;
 pub mod translate;

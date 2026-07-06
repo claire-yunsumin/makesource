@@ -252,7 +252,10 @@ pub async fn run_generation(
         &style_fragments(style.as_ref()),
         &preset.suffix,
     );
-    let negative = assemble_negative(&preset.negative, "");
+    let negative = assemble_negative(
+        &preset.negative,
+        &crate::settings::AppSettings::load(data_root).safe_negative,
+    );
     let (width, height) = req
         .size
         .unwrap_or((preset.params.width, preset.params.height));

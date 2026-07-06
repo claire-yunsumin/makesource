@@ -1,0 +1,137 @@
+{
+  "$comment": "오픈소스 라이선스 BOM (04 §4.5 정보 섹션). 새 의존성·모델 추가 시 여기에 함께 기록 (CLAUDE.md 절대 규칙 2).",
+  "entries": [
+    {
+      "name": "Tauri",
+      "license": "Apache-2.0 / MIT",
+      "url": "https://github.com/tauri-apps/tauri",
+      "role": "앱 프레임워크"
+    },
+    {
+      "name": "React / React DOM",
+      "license": "MIT",
+      "url": "https://github.com/facebook/react",
+      "role": "UI"
+    },
+    {
+      "name": "React Router",
+      "license": "MIT",
+      "url": "https://github.com/remix-run/react-router",
+      "role": "라우팅"
+    },
+    {
+      "name": "Zustand",
+      "license": "MIT",
+      "url": "https://github.com/pmndrs/zustand",
+      "role": "상태 관리"
+    },
+    {
+      "name": "Tailwind CSS",
+      "license": "MIT",
+      "url": "https://github.com/tailwindlabs/tailwindcss",
+      "role": "스타일"
+    },
+    {
+      "name": "tauri-plugin-dialog",
+      "license": "Apache-2.0 / MIT",
+      "url": "https://github.com/tauri-apps/plugins-workspace",
+      "role": "파일 다이얼로그"
+    },
+    {
+      "name": "tauri-plugin-drag (CrabNebula)",
+      "license": "MIT",
+      "url": "https://github.com/crabnebula-dev/drag-rs",
+      "role": "Finder 드래그 아웃"
+    },
+    {
+      "name": "serde",
+      "license": "Apache-2.0 / MIT",
+      "url": "https://github.com/serde-rs/serde",
+      "role": "직렬화"
+    },
+    {
+      "name": "sqlx",
+      "license": "Apache-2.0 / MIT",
+      "url": "https://github.com/launchbadge/sqlx",
+      "role": "SQLite"
+    },
+    {
+      "name": "tokio",
+      "license": "MIT",
+      "url": "https://github.com/tokio-rs/tokio",
+      "role": "비동기 런타임"
+    },
+    {
+      "name": "reqwest",
+      "license": "Apache-2.0 / MIT",
+      "url": "https://github.com/seanmonstar/reqwest",
+      "role": "HTTP (모델 다운로드)"
+    },
+    {
+      "name": "tokio-tungstenite",
+      "license": "MIT",
+      "url": "https://github.com/snapview/tokio-tungstenite",
+      "role": "ComfyUI WebSocket"
+    },
+    {
+      "name": "image",
+      "license": "Apache-2.0 / MIT",
+      "url": "https://github.com/image-rs/image",
+      "role": "이미지 변환"
+    },
+    {
+      "name": "ComfyUI",
+      "license": "GPL-3.0 (별도 프로세스)",
+      "url": "https://github.com/comfyanonymous/ComfyUI",
+      "role": "이미지 생성 엔진"
+    },
+    {
+      "name": "kohya sd-scripts",
+      "license": "Apache-2.0 (별도 프로세스)",
+      "url": "https://github.com/kohya-ss/sd-scripts",
+      "role": "LoRA 학습"
+    },
+    {
+      "name": "Argos Translate",
+      "license": "MIT",
+      "url": "https://github.com/argosopentech/argos-translate",
+      "role": "한→영 로컬 번역"
+    },
+    {
+      "name": "rembg + u2net",
+      "license": "MIT (모델 Apache-2.0)",
+      "url": "https://github.com/danielgatis/rembg",
+      "role": "배경 제거"
+    },
+    {
+      "name": "Florence-2 (Microsoft)",
+      "license": "MIT",
+      "url": "https://huggingface.co/microsoft/Florence-2-base",
+      "role": "에센스 이미지 서술"
+    },
+    {
+      "name": "WD14 Tagger (SmilingWolf)",
+      "license": "Apache-2.0",
+      "url": "https://huggingface.co/SmilingWolf/wd-v1-4-moat-tagger-v2",
+      "role": "에센스 태그 추출"
+    },
+    {
+      "name": "Stable Diffusion XL",
+      "license": "CreativeML Open RAIL++-M",
+      "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0",
+      "role": "표준 프로파일 모델"
+    },
+    {
+      "name": "Stable Diffusion 1.5",
+      "license": "CreativeML OpenRAIL-M",
+      "url": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5",
+      "role": "라이트 프로파일 모델"
+    },
+    {
+      "name": "IP-Adapter (Tencent AI Lab)",
+      "license": "Apache-2.0",
+      "url": "https://huggingface.co/h94/IP-Adapter",
+      "role": "에센스 스타일 적용"
+    }
+  ]
+}

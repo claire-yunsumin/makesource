@@ -10,6 +10,8 @@ pub mod engine;
 pub mod error;
 pub mod paths;
 pub mod prompt;
+pub mod settings;
+pub mod storage;
 pub mod styles;
 pub mod training;
 
@@ -90,6 +92,12 @@ pub fn run() {
             commands::styles::styles_list,
             commands::styles::style_save,
             commands::styles::style_delete,
+            commands::settings::settings_get,
+            commands::settings::settings_save,
+            commands::settings::models_list,
+            commands::settings::cache_stats,
+            commands::settings::cache_clear,
+            commands::settings::licenses_get,
         ])
         .build(tauri::generate_context!());
 
