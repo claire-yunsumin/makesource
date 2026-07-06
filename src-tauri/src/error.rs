@@ -35,19 +35,31 @@ impl AppError {
 
 impl From<std::io::Error> for AppError {
     fn from(err: std::io::Error) -> Self {
-        AppError::with_detail("E_IO", "파일 작업 중 문제가 생겼어요.", err)
+        AppError::with_detail(
+            "E_IO",
+            "파일 작업 중 문제가 생겼어요. 다시 시도해 주세요.",
+            err,
+        )
     }
 }
 
 impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {
-        AppError::with_detail("E_DB", "저장소에 접근하지 못했어요.", err)
+        AppError::with_detail(
+            "E_DB",
+            "데이터를 처리하지 못했어요. 다시 시도해 주세요.",
+            err,
+        )
     }
 }
 
 impl From<reqwest::Error> for AppError {
     fn from(err: reqwest::Error) -> Self {
-        AppError::with_detail("E_NETWORK", "네트워크 연결에 문제가 있어요.", err)
+        AppError::with_detail(
+            "E_NETWORK",
+            "네트워크 연결에 문제가 있어요. 잠시 후 다시 시도해 주세요.",
+            err,
+        )
     }
 }
 

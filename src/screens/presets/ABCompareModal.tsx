@@ -99,7 +99,9 @@ export default function ABCompareModal({
         setSession((s) =>
           failLocal(
             s,
-            isAppError(e) ? e : { code: "E_UNKNOWN", message: "생성을 시작하지 못했어요." },
+            isAppError(e)
+              ? e
+              : { code: "E_UNKNOWN", message: "생성을 시작하지 못했어요. 다시 시도해 주세요." },
           ),
         );
       }

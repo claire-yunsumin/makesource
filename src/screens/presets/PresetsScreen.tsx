@@ -87,7 +87,7 @@ export default function PresetsScreen() {
       await load();
     } catch (e) {
       setToast({
-        message: isAppError(e) ? e.message : "프리셋을 저장하지 못했어요.",
+        message: isAppError(e) ? e.message : "프리셋을 저장하지 못했어요. 다시 시도해 주세요.",
         tone: "error",
       });
     } finally {
@@ -110,7 +110,7 @@ export default function PresetsScreen() {
         await load();
       } catch (e) {
         setToast({
-          message: isAppError(e) ? e.message : "프리셋을 복원하지 못했어요.",
+          message: isAppError(e) ? e.message : "프리셋을 복원하지 못했어요. 다시 시도해 주세요.",
           tone: "error",
         });
       } finally {
@@ -133,7 +133,7 @@ export default function PresetsScreen() {
       setToast({ message: "프리셋을 내보냈어요.", tone: "success" });
     } catch (e) {
       setToast({
-        message: isAppError(e) ? e.message : "프리셋을 내보내지 못했어요.",
+        message: isAppError(e) ? e.message : "프리셋을 내보내지 못했어요. 다시 시도해 주세요.",
         tone: "error",
       });
     } finally {
@@ -155,7 +155,7 @@ export default function PresetsScreen() {
       setToast({ message: "프리셋을 가져왔어요.", tone: "success" });
     } catch (e) {
       setToast({
-        message: isAppError(e) ? e.message : "프리셋을 가져오지 못했어요.",
+        message: isAppError(e) ? e.message : "프리셋을 가져오지 못했어요. 다시 시도해 주세요.",
         tone: "error",
       });
     } finally {

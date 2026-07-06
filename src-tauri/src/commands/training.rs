@@ -241,7 +241,13 @@ pub async fn caption_dataset(app: AppHandle, dir: String) -> Result<Vec<CaptionI
             "캡션 생성이 너무 오래 걸려 중단했어요. 이미지 수를 줄여 다시 시도해 주세요.",
         )
     })?
-    .map_err(|e| AppError::with_detail("E_CAPTION_SPAWN", "캡션 프로세스 오류예요.", e))?;
+    .map_err(|e| {
+        AppError::with_detail(
+            "E_CAPTION_SPAWN",
+            "캡션 생성 중 문제가 생겼어요. 다시 시도해 주세요.",
+            e,
+        )
+    })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     parse_caption_output(stdout.lines().next().unwrap_or("")).map_err(|detail| {

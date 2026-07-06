@@ -452,7 +452,11 @@ pub async fn run_training(
             }
             exit = child.wait() => {
                 break exit.map_err(|e| {
-                    AppError::with_detail("E_TRAIN_SPAWN", "학습 프로세스 오류예요.", e)
+                    AppError::with_detail(
+                        "E_TRAIN_SPAWN",
+                        "학습 중 문제가 생겼어요. 로그를 확인해 주세요.",
+                        e,
+                    )
                 })?;
             }
         }

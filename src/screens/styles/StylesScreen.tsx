@@ -61,7 +61,7 @@ export default function StylesScreen() {
       setToast({ message: "스타일을 삭제했어요.", tone: "success" });
     } catch (e) {
       setToast({
-        message: isAppError(e) ? e.message : "스타일을 삭제하지 못했어요.",
+        message: isAppError(e) ? e.message : "스타일을 삭제하지 못했어요. 다시 시도해 주세요.",
         tone: "error",
       });
     }

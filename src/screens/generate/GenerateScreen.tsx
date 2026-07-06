@@ -154,7 +154,11 @@ export default function GenerateScreen() {
       st.failLocal(
         isAppError(e)
           ? e
-          : { code: "E_UNKNOWN", message: "생성을 시작하지 못했어요.", detail: String(e) },
+          : {
+              code: "E_UNKNOWN",
+              message: "생성을 시작하지 못했어요. 다시 시도해 주세요.",
+              detail: String(e),
+            },
       );
     } finally {
       submitting.current = false;
@@ -181,7 +185,7 @@ export default function GenerateScreen() {
     } catch (e) {
       useGenerateStore.getState().toggleFavorite(id); // 롤백
       setToast({
-        message: isAppError(e) ? e.message : "즐겨찾기를 저장하지 못했어요.",
+        message: isAppError(e) ? e.message : "즐겨찾기를 저장하지 못했어요. 다시 시도해 주세요.",
         tone: "error",
       });
     }
@@ -196,7 +200,7 @@ export default function GenerateScreen() {
       setToast({ message: `다운로드 폴더에 저장했어요 · ${fileName}`, tone: "success" });
     } catch (e) {
       setToast({
-        message: isAppError(e) ? e.message : "이미지를 저장하지 못했어요.",
+        message: isAppError(e) ? e.message : "이미지를 저장하지 못했어요. 다시 시도해 주세요.",
         tone: "error",
       });
     }
