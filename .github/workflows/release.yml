@@ -43,7 +43,9 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "LocalBrush ${{ github.ref_name }}"
           releaseBody: |
-            무서명 배포입니다 — 설치 방법은 README의 "설치" 절을 참고하세요
-            (macOS가 "확인되지 않은 개발자" 경고를 보이면 우클릭 → 열기).
+            무서명 배포입니다 — 설치 방법은 README의 "설치" 절을 참고하세요.
+            macOS 경고가 뜨면: "확인되지 않은 개발자"는 우클릭 → 열기로 해결되지만,
+            "손상되었기 때문에 열 수 없습니다"(Apple Silicon에서 흔함)는 터미널에서
+            `xattr -cr /Applications/LocalBrush.app` 실행 후 다시 열어야 합니다.
           releaseDraft: true
           prerelease: false
