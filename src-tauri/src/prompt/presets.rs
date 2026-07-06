@@ -14,6 +14,10 @@ use crate::error::AppError;
 
 pub const DEFAULT_PRESETS: &str = include_str!("../../resources/presets.default.json");
 
+/// 가져오기에서 검증하는 presets.json `schemaVersion` (TAD §3.2). 스키마가
+/// 바뀌면 마이그레이션을 추가하고 이 값을 올릴 것.
+pub const SUPPORTED_SCHEMA_VERSION: u32 = 1;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PresetParams {
@@ -152,6 +156,42 @@ pub fn upsert_preset(
     Ok(saved)
 }
 
+/// 내보내기: 현재 presets.json(또는 내장 기본값)을 사용자가 고른 임의 경로로 복사.
+pub fn export_presets(data_root: &Path, dest_path: &Path) -> Result<(), AppError> {
+    let file = load_presets(data_root)?;
+    let text = serde_json::to_string_pretty(&file)
+        .map_err(|e| AppError::with_detail("E_PRESET_WRITE", "프리셋을 저장하지 못했어요.", e))?;
+    std::fs::write(dest_path, text)?;
+    Ok(())
+}
+
+/// 가져오기: schemaVersion을 먼저 검증(불일치 시 아무 것도 바꾸지 않고 에러)한
+/// 뒤, 각 프리셋을 `upsert_preset`으로 병합한다 — 기존 상태는 history에
+/// 스냅샷으로 보존되며 새 버전으로 저장된다(저장과 동일한 버전 관리 재사용).
+pub fn import_presets(
+    data_root: &Path,
+    src_path: &Path,
+    saved_at: i64,
+) -> Result<Vec<Preset>, AppError> {
+    let text = std::fs::read_to_string(src_path)?;
+    let imported: PresetFile = serde_json::from_str(&text)
+        .map_err(|e| AppError::with_detail("E_PRESET_PARSE", "가져올 파일을 읽지 못했어요.", e))?;
+    if imported.schema_version != SUPPORTED_SCHEMA_VERSION {
+        return Err(AppError::with_detail(
+            "E_PRESET_SCHEMA_VERSION",
+            "지원하지 않는 프리셋 파일 버전이에요.",
+            format!(
+                "schemaVersion {} (지원: {SUPPORTED_SCHEMA_VERSION})",
+                imported.schema_version
+            ),
+        ));
+    }
+    for preset in imported.presets {
+        upsert_preset(data_root, preset, saved_at)?;
+    }
+    Ok(load_presets(data_root)?.presets)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,5 +328,78 @@ mod tests {
         let storybook = find_preset(&reloaded, "storybook").unwrap();
         assert_eq!(storybook.version, 2);
         assert_eq!(storybook.history.len(), 1);
+    }
+
+    #[test]
+    fn export_writes_current_presets_to_arbitrary_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("out/backup.json");
+        // 부모 폴더가 없어도 되는지는 export_presets 책임이 아님 — 호출부가 만든다
+        std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        export_presets(dir.path(), &dest).unwrap();
+
+        let exported: PresetFile =
+            serde_json::from_str(&std::fs::read_to_string(&dest).unwrap()).unwrap();
+        assert_eq!(exported.schema_version, 1);
+        assert_eq!(exported.presets.len(), 6);
+    }
+
+    #[test]
+    fn import_rejects_unsupported_schema_version_without_side_effects() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("in.json");
+        std::fs::write(&src, r#"{"schemaVersion":99,"presets":[]}"#).unwrap();
+
+        let err = import_presets(dir.path(), &src, 1_000).unwrap_err();
+        assert_eq!(err.code, "E_PRESET_SCHEMA_VERSION");
+        // 검증 실패 시 presets.json이 새로 만들어지지 않아야 한다
+        assert!(!dir.path().join("presets.json").exists());
+    }
+
+    #[test]
+    fn import_merges_via_upsert_bumping_version_and_keeping_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("in.json");
+        std::fs::write(
+            &src,
+            r#"{"schemaVersion":1,"presets":[
+                {"id":"storybook","label":{"ko":"수정됨"},"version":1,"prefix":"imported prefix","suffix":"s","negative":"n","params":{"steps":10,"cfg":5.0,"width":512,"height":512}},
+                {"id":"new-one","label":{"ko":"새 프리셋"},"version":1,"prefix":"p","suffix":"s","negative":"n","params":{"steps":10,"cfg":5.0,"width":512,"height":512}}
+            ]}"#,
+        )
+        .unwrap();
+
+        let merged = import_presets(dir.path(), &src, 2_000).unwrap();
+        assert_eq!(merged.len(), 7, "기존 6종 + 신규 1종");
+
+        let storybook = merged.iter().find(|p| p.id == "storybook").unwrap();
+        assert_eq!(storybook.version, 2, "기존 프리셋은 버전이 올라가야 함");
+        assert_eq!(storybook.prefix, "imported prefix");
+        assert_eq!(storybook.history.len(), 1, "이전 상태가 history에 보존됨");
+        assert_eq!(storybook.history[0].version, 1);
+
+        let new_one = merged.iter().find(|p| p.id == "new-one").unwrap();
+        assert_eq!(new_one.version, 1);
+        assert!(new_one.history.is_empty());
+    }
+
+    #[test]
+    fn export_then_import_into_fresh_data_root_keeps_same_preset_ids_and_content() {
+        let dir_a = tempfile::tempdir().unwrap();
+        let dir_b = tempfile::tempdir().unwrap();
+        let dest = dir_a.path().join("export.json");
+        export_presets(dir_a.path(), &dest).unwrap();
+
+        // dir_b는 presets.json이 없어 내장 기본값(동일 6종)이 "기존"으로 취급됨 —
+        // 가져오기는 저장과 같은 버전 관리를 타므로 내용이 같아도 버전은 올라간다.
+        let merged = import_presets(dir_b.path(), &dest, 3_000).unwrap();
+        assert_eq!(merged.len(), 6);
+        let storybook = merged.iter().find(|p| p.id == "storybook").unwrap();
+        assert_eq!(storybook.version, 2);
+        assert_eq!(storybook.history.len(), 1);
+        assert_eq!(
+            storybook.history[0].prefix, storybook.prefix,
+            "내용 자체는 그대로"
+        );
     }
 }

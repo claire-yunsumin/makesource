@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { dataDir } from "@tauri-apps/api/path";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import Toast from "../../components/Toast";
 import { isAppError, type AppError } from "../../lib/appError";
 import { APP_DATA_DIR_NAME } from "../../lib/imagePath";
-import { presetsGet, presetsSave, type Preset, type PresetSnapshot } from "../../lib/tauri";
+import {
+  presetsExport,
+  presetsGet,
+  presetsImport,
+  presetsSave,
+  type Preset,
+  type PresetSnapshot,
+} from "../../lib/tauri";
 import { presetLabel } from "../generate/presetTypes";
 import ABCompareModal from "./ABCompareModal";
 import { isFormValid, toFormValues, toSavePayload, type PresetFormValues } from "./presetForm";
@@ -12,8 +20,8 @@ const inputClass =
   "w-full rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text placeholder:text-text-sub focus:border-primary focus:outline-none";
 
 /**
- * 프리셋 편집기 (04 §4.4, T5.1/T5.2): 좌 리스트(버전 배지) / 우 편집 폼 + A/B 비교.
- * 내보내기/가져오기(T5.3)는 아직 준비 중.
+ * 프리셋 편집기 (04 §4.4, T5.1/T5.2/T5.3): 좌 리스트(버전 배지) / 우 편집 폼 +
+ * A/B 비교 + 내보내기/가져오기.
  */
 export default function PresetsScreen() {
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -26,6 +34,8 @@ export default function PresetsScreen() {
   const [toast, setToast] = useState<{ message: string; tone: "error" | "success" } | null>(null);
   const [compareOpen, setCompareOpen] = useState(false);
   const [dataRoot, setDataRoot] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     dataDir()
@@ -110,6 +120,49 @@ export default function PresetsScreen() {
     [selected, load],
   );
 
+  const handleExport = useCallback(async () => {
+    const destPath = await save({
+      title: "프리셋 내보내기",
+      defaultPath: "presets.json",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (!destPath) return;
+    setExporting(true);
+    try {
+      await presetsExport(destPath);
+      setToast({ message: "프리셋을 내보냈어요.", tone: "success" });
+    } catch (e) {
+      setToast({
+        message: isAppError(e) ? e.message : "프리셋을 내보내지 못했어요.",
+        tone: "error",
+      });
+    } finally {
+      setExporting(false);
+    }
+  }, []);
+
+  const handleImport = useCallback(async () => {
+    const srcPath = await open({
+      title: "프리셋 가져오기",
+      multiple: false,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (!srcPath || Array.isArray(srcPath)) return;
+    setImporting(true);
+    try {
+      const merged = await presetsImport(srcPath);
+      setPresets(merged);
+      setToast({ message: "프리셋을 가져왔어요.", tone: "success" });
+    } catch (e) {
+      setToast({
+        message: isAppError(e) ? e.message : "프리셋을 가져오지 못했어요.",
+        tone: "error",
+      });
+    } finally {
+      setImporting(false);
+    }
+  }, []);
+
   return (
     <div className="flex h-full">
       <div className="w-56 shrink-0 overflow-y-auto border-r border-border p-4">
@@ -182,11 +235,19 @@ export default function PresetsScreen() {
               </button>
               <button
                 type="button"
-                disabled
-                title="준비 중 (T5.3)"
-                className="rounded-md border border-border px-3 py-1.5 text-xs text-text-sub opacity-40"
+                disabled={exporting}
+                onClick={() => void handleExport()}
+                className="ease-out-ui rounded-md border border-border px-3 py-1.5 text-xs text-text transition-colors duration-150 hover:bg-surface-2 disabled:opacity-40"
               >
-                내보내기/가져오기
+                내보내기
+              </button>
+              <button
+                type="button"
+                disabled={importing}
+                onClick={() => void handleImport()}
+                className="ease-out-ui rounded-md border border-border px-3 py-1.5 text-xs text-text transition-colors duration-150 hover:bg-surface-2 disabled:opacity-40"
+              >
+                가져오기
               </button>
             </div>
 
