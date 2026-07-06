@@ -128,12 +128,25 @@ export interface PresetParams {
   height: number;
 }
 
+/** 저장 시점의 편집 가능 필드 스냅샷 (TAD §3.2 `history[]`). */
+export interface PresetSnapshot {
+  version: number;
+  label: PresetLabel;
+  successCriteria: string;
+  prefix: string;
+  suffix: string;
+  negative: string;
+  params: PresetParams;
+  /** unix ms */
+  savedAt: number;
+}
+
 export interface Preset {
   id: string;
   label: PresetLabel;
   version: number;
-  /** 이전 버전 스냅샷 (버전 관리는 T5.1) */
-  history: unknown[];
+  /** 이전 버전 스냅샷, 최신이 [0] (T5.1) */
+  history: PresetSnapshot[];
   successCriteria: string;
   prefix: string;
   suffix: string;
@@ -144,6 +157,15 @@ export interface Preset {
 /** 프리셋 목록 로드 (사용자 presets.json 또는 내장 기본값). */
 export function presetsGet(): Promise<Preset[]> {
   return invokeCommand<Preset[]>("presets_get");
+}
+
+/**
+ * 저장: 서버가 현재 상태를 history에 스냅샷으로 남기고 version을 올린다.
+ * 전달한 version/history는 무시됨 — 복원도 이 함수로 처리(스냅샷 필드값을
+ * 다시 저장하면 현재 버전이 history에 보존되며 새 버전으로 복원됨).
+ */
+export function presetsSave(preset: Preset): Promise<void> {
+  return invokeCommand<void>("presets_save", { preset });
 }
 
 // ---- translate (TAD §4, §5) ----
