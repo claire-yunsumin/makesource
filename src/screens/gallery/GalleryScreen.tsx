@@ -133,19 +133,28 @@ export default function GalleryScreen() {
     }
   }, []);
 
-  const handleExport = useCallback(async (id: string, format: ExportFormat) => {
-    try {
-      const dir = await downloadDir();
-      const path = await exportImage({ id, format, destDir: dir });
-      const fileName = path.split("/").pop() ?? path;
-      setToast({ message: `다운로드 폴더에 저장했어요 · ${fileName}`, tone: "success" });
-    } catch (e) {
-      setToast({
-        message: isAppError(e) ? e.message : "이미지를 저장하지 못했어요.",
-        tone: "error",
-      });
-    }
-  }, []);
+  const handleExport = useCallback(
+    async (id: string, format: ExportFormat, transparent = false) => {
+      try {
+        if (transparent) {
+          setToast({
+            message: "배경을 지우는 중이에요… 최대 몇십 초 걸릴 수 있어요.",
+            tone: "success",
+          });
+        }
+        const dir = await downloadDir();
+        const path = await exportImage({ id, format, transparent, destDir: dir });
+        const fileName = path.split("/").pop() ?? path;
+        setToast({ message: `다운로드 폴더에 저장했어요 · ${fileName}`, tone: "success" });
+      } catch (e) {
+        setToast({
+          message: isAppError(e) ? e.message : "이미지를 저장하지 못했어요.",
+          tone: "error",
+        });
+      }
+    },
+    [],
+  );
 
   const handleCopyMeta = useCallback(async (text: string) => {
     const ok = await copyText(text);
@@ -302,7 +311,7 @@ export default function GalleryScreen() {
           dataRoot={dataRoot}
           onClose={() => setSelectedId(null)}
           onToggleFavorite={(id) => void handleToggleFavorite(id)}
-          onExport={(id, format) => void handleExport(id, format)}
+          onExport={(id, format, transparent) => void handleExport(id, format, transparent)}
           onCopyMeta={(text) => void handleCopyMeta(text)}
           onRegenerate={handleRegenerate}
         />

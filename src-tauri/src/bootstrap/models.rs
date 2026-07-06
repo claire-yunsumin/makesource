@@ -40,6 +40,12 @@ const STANDARD: &[ModelSpec] = &[
         dest_rel: "models/argos/translate-ko_en.argosmodel",
         approx_bytes: 113 * MB,
     },
+    ModelSpec {
+        // 배경 제거 u2net (T2.4b) — danielgatis/rembg 기본 모델의 HF 미러
+        url: "https://huggingface.co/tomjackson2023/rembg/resolve/main/u2net.onnx",
+        dest_rel: "models/rembg/u2net.onnx",
+        approx_bytes: 168 * MB,
+    },
 ];
 
 /// light: SD1.5 (8GB RAM 폴백, ~4GB)
@@ -54,6 +60,12 @@ const LIGHT: &[ModelSpec] = &[
         url: "https://huggingface.co/shethjenil/argostranslate/resolve/main/translate-ko_en.argosmodel",
         dest_rel: "models/argos/translate-ko_en.argosmodel",
         approx_bytes: 113 * MB,
+    },
+    ModelSpec {
+        // 배경 제거 u2net (T2.4b) — danielgatis/rembg 기본 모델의 HF 미러
+        url: "https://huggingface.co/tomjackson2023/rembg/resolve/main/u2net.onnx",
+        dest_rel: "models/rembg/u2net.onnx",
+        approx_bytes: 168 * MB,
     },
 ];
 
