@@ -24,6 +24,17 @@
 | 추론 | ComfyUI — 저장소에 포함하지 않고 별도 프로세스로 기동·HTTP/WS 통신 |
 | 학습 | kohya (서브프로세스) |
 
+## 설치
+
+1. [Releases](https://github.com/claire-yunsumin/makesource/releases)에서 최신 `LocalBrush_x.y.z_aarch64.dmg`(Apple Silicon)를 내려받습니다.
+2. dmg를 열고 LocalBrush를 Applications 폴더로 드래그합니다.
+3. 처음 실행하면 macOS가 **"확인되지 않은 개발자"** 경고를 띄웁니다 — 이 앱은 애플 공증(유료, 연 $99)을 받지 않은 무서명 배포이기 때문입니다. Finder에서 앱을 **우클릭(또는 control-클릭) → 열기**를 누르고, 뜨는 대화상자에서 다시 **열기**를 누르면 실행됩니다. (처음 한 번만 필요)
+4. 첫 실행 시 최초 설치 화면이 뜹니다. 표준(~10GB)/라이트(~4GB) 중 하나를 골라 모델을 내려받으면(인터넷 필요) 바로 쓸 수 있습니다.
+
+Apple Silicon(M1 이상) macOS 전용입니다. Intel Mac에서는 코드 빌드는 되지만 이미지 생성(ComfyUI/MPS)이 동작하지 않습니다.
+
+Homebrew(`brew install --cask localbrush`) 배포는 준비 중입니다 — 현재는 위 dmg 직접 설치만 지원합니다.
+
 ## 개발 환경 세팅
 
 요구 사항: macOS, Node.js 20+, pnpm, Rust(stable, `~/.cargo/bin`이 PATH에 있어야 함)

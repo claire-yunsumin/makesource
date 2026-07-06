@@ -1,0 +1,49 @@
+name: Release
+
+# CLAUDE.md: vX.Y.Z 태그 push → .dmg 빌드 후 GitHub Release 업로드.
+# 서명·공증은 하지 않는다 (PRD 비기능: 공증은 유료라 선택 — 무서명 배포).
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust 캐시
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: 의존성 설치
+        run: pnpm install --frozen-lockfile
+
+      - name: 빌드 + GitHub Release 초안 생성
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "LocalBrush ${{ github.ref_name }}"
+          releaseBody: |
+            무서명 배포입니다 — 설치 방법은 README의 "설치" 절을 참고하세요
+            (macOS가 "확인되지 않은 개발자" 경고를 보이면 우클릭 → 열기).
+          releaseDraft: true
+          prerelease: false
