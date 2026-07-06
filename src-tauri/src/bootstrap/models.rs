@@ -15,6 +15,7 @@ pub struct ModelSpec {
 }
 
 const GB: u64 = 1024 * 1024 * 1024;
+const MB: u64 = 1024 * 1024;
 
 /// standard: SDXL base + IP-Adapter(+이미지 인코더) (~10GB)
 const STANDARD: &[ModelSpec] = &[
@@ -33,14 +34,28 @@ const STANDARD: &[ModelSpec] = &[
         dest_rel: "models/clip_vision/clip_vision_bigG.safetensors",
         approx_bytes: 2 * GB,
     },
+    ModelSpec {
+        // 한→영 Argos 모델 (T2.3b, D-008) — argosopentech 원본의 HF 미러
+        url: "https://huggingface.co/shethjenil/argostranslate/resolve/main/translate-ko_en.argosmodel",
+        dest_rel: "models/argos/translate-ko_en.argosmodel",
+        approx_bytes: 113 * MB,
+    },
 ];
 
 /// light: SD1.5 (8GB RAM 폴백, ~4GB)
-const LIGHT: &[ModelSpec] = &[ModelSpec {
-    url: "https://huggingface.co/Comfy-Org/stable-diffusion-v1-5-archive/resolve/main/v1-5-pruned-emaonly-fp16.safetensors",
-    dest_rel: "models/checkpoints/v1-5-pruned-emaonly-fp16.safetensors",
-    approx_bytes: 2 * GB,
-}];
+const LIGHT: &[ModelSpec] = &[
+    ModelSpec {
+        url: "https://huggingface.co/Comfy-Org/stable-diffusion-v1-5-archive/resolve/main/v1-5-pruned-emaonly-fp16.safetensors",
+        dest_rel: "models/checkpoints/v1-5-pruned-emaonly-fp16.safetensors",
+        approx_bytes: 2 * GB,
+    },
+    ModelSpec {
+        // 한→영 Argos 모델 (T2.3b, D-008) — argosopentech 원본의 HF 미러
+        url: "https://huggingface.co/shethjenil/argostranslate/resolve/main/translate-ko_en.argosmodel",
+        dest_rel: "models/argos/translate-ko_en.argosmodel",
+        approx_bytes: 113 * MB,
+    },
+];
 
 pub fn models_for(profile: ModelProfile) -> &'static [ModelSpec] {
     match profile {
