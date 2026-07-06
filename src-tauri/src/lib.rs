@@ -10,6 +10,7 @@ pub mod engine;
 pub mod error;
 pub mod paths;
 pub mod prompt;
+pub mod styles;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -69,6 +70,10 @@ pub fn run() {
             commands::history::history_list,
             commands::history::history_toggle_favorite,
             commands::export::export_image,
+            commands::essence::essence_create,
+            commands::styles::styles_list,
+            commands::styles::style_save,
+            commands::styles::style_delete,
         ])
         .build(tauri::generate_context!());
 

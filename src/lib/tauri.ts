@@ -223,3 +223,56 @@ export interface ExportImageArgs {
 export function exportImage(args: ExportImageArgs): Promise<string> {
   return invokeCommand<string>("export_image", { args });
 }
+
+// ---- styles / essence (TAD §5, §3.3 — T4.2) ----
+
+export type StyleKind = "essence" | "lora";
+
+/** styles.json 항목 (TAD §3.3 — Rust styles::Style과 동기). */
+export interface Style {
+  id: string;
+  name: string;
+  kind: StyleKind;
+  essencePrompt?: string;
+  /** 데이터 루트 기준 상대 경로 (저장 시 절대 경로는 백엔드가 복사 후 상대화) */
+  referenceImages: string[];
+  ipAdapterWeight?: number;
+  loraPath?: string;
+  loraWeight?: number;
+  triggerWord?: string;
+  thumb?: string;
+  createdAt: number;
+}
+
+export function stylesList(): Promise<Style[]> {
+  return invokeCommand<Style[]>("styles_list");
+}
+
+export function styleSave(style: Style): Promise<void> {
+  return invokeCommand<void>("style_save", { style });
+}
+
+export function styleDelete(id: string): Promise<void> {
+  return invokeCommand<void>("style_delete", { id });
+}
+
+export interface EssenceResult {
+  essencePrompt: string;
+  tags: string[];
+  captions: string[];
+}
+
+/** `essence://progress` 페이로드 (분석 로그 중계) */
+export interface EssenceProgressEvent {
+  message: string;
+}
+
+export const ESSENCE_PROGRESS_EVENT = "essence://progress";
+
+/**
+ * 참조 이미지 3~10장 → 에센스 프롬프트 (TAD §5 — 결과를 직접 반환, 진행은 이벤트).
+ * 첫 실행은 모델 다운로드로 수 분 걸릴 수 있다.
+ */
+export function essenceCreate(imagePaths: string[]): Promise<EssenceResult> {
+  return invokeCommand<EssenceResult>("essence_create", { args: { imagePaths } });
+}
