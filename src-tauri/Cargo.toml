@@ -39,3 +39,9 @@ toml = "0.8"
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
+
+# 릴리스 최적화 (T9.2, docs/11 §P1.1). panic=abort는 Tauri 런타임 영향 검토 후 별도 판단.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

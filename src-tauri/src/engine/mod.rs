@@ -17,6 +17,14 @@ pub mod client;
 pub mod fallback;
 pub mod generation;
 
+/// 프로세스 전역 공유 HTTP 클라이언트 (T9.2, docs/11 §P1.4).
+/// reqwest::Client는 내부가 Arc라 클론이 싸다 — 커넥션 풀을 재사용하려면
+/// 생성 경로마다 새로 만들지 말고 이것 하나를 써야 한다.
+pub fn shared_http() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
+
 /// 엔진 실행 구성. data_root에서 파생 (TAD §3/§6).
 #[derive(Debug, Clone)]
 pub struct EngineConfig {

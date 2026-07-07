@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::SqlitePool;
 
 pub mod models;
@@ -46,9 +46,14 @@ impl Db {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent).map_err(sqlx::Error::Io)?;
         }
+        // WAL: 생성 완료 시 쓰기와 갤러리 읽기의 동시성 확보 (T9.2, docs/11 §P1.2)
         let opts = SqliteConnectOptions::new()
             .filename(db_path)
-            .create_if_missing(true);
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal)
+            .busy_timeout(std::time::Duration::from_secs(5))
+            .foreign_keys(true);
         let pool = SqlitePoolOptions::new().connect_with(opts).await?;
         MIGRATOR.run(&pool).await?;
         Ok(Self { pool })
@@ -412,6 +417,33 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(p2[0].id, "cabin2");
+    }
+
+    #[tokio::test]
+    async fn filter_queries_use_secondary_indices() {
+        // T9.2 (docs/11 §P1.3): ♥/스타일 필터가 풀스캔이 아니라 보조 인덱스를 타는지
+        let db = Db::connect_in_memory().await.unwrap();
+        for (sql, index) in [
+            (
+                "EXPLAIN QUERY PLAN SELECT * FROM generations WHERE favorite = 1 \
+                 ORDER BY created_at DESC, id DESC LIMIT 10",
+                "idx_gen_fav",
+            ),
+            (
+                "EXPLAIN QUERY PLAN SELECT * FROM generations WHERE style_id = 's1' \
+                 ORDER BY created_at DESC, id DESC LIMIT 10",
+                "idx_gen_style",
+            ),
+        ] {
+            let rows: Vec<(i64, i64, i64, String)> =
+                sqlx::query_as(sql).fetch_all(&db.pool).await.unwrap();
+            let plan = rows
+                .iter()
+                .map(|r| r.3.as_str())
+                .collect::<Vec<_>>()
+                .join(" | ");
+            assert!(plan.contains(index), "{index} 미사용: {plan}");
+        }
     }
 
     #[test]

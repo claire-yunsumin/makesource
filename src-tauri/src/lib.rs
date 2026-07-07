@@ -9,6 +9,7 @@ pub mod db;
 pub mod engine;
 pub mod error;
 pub mod paths;
+pub mod perf;
 pub mod prompt;
 pub mod settings;
 pub mod storage;
@@ -44,7 +45,7 @@ pub fn run() {
             let engine_state = commands::engine::Engine {
                 manager: manager.clone(),
                 config: config.clone(),
-                client: reqwest::Client::new(),
+                client: engine::shared_http().clone(),
             };
             app.manage(engine_state);
 

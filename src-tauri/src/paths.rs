@@ -21,6 +21,17 @@ pub fn db_path(app_data_root: &Path) -> PathBuf {
     app_data_root.join("app.db")
 }
 
+/// 내용이 다를 때만 파일을 쓴다 (T9.2, docs/11 §P1.7).
+/// 내장 파이썬 스크립트가 호출마다 디스크에 재기록되는 것을 막는다.
+pub fn write_if_changed(path: &Path, content: &str) -> std::io::Result<()> {
+    if let Ok(existing) = std::fs::read_to_string(path) {
+        if existing == content {
+            return Ok(());
+        }
+    }
+    std::fs::write(path, content)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -38,5 +49,27 @@ mod tests {
     fn db_path_is_app_db_under_root() {
         let root = Path::new("/data/LocalBrush");
         assert_eq!(db_path(root), Path::new("/data/LocalBrush/app.db"));
+    }
+
+    #[test]
+    fn write_if_changed_skips_identical_content() {
+        use std::time::Duration;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("script.py");
+        write_if_changed(&path, "print(1)").unwrap();
+        let first_mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+
+        std::thread::sleep(Duration::from_millis(20));
+        // 같은 내용 → 쓰기 스킵 (mtime 불변)
+        write_if_changed(&path, "print(1)").unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().modified().unwrap(),
+            first_mtime
+        );
+
+        // 다른 내용 → 갱신
+        write_if_changed(&path, "print(2)").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "print(2)");
     }
 }

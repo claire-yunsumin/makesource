@@ -68,6 +68,46 @@ pub struct GenDone {
     pub image_paths: Vec<String>,
     /// 이 배치에 사용된 시드 (시드 고정 재생성 — T2.4, F-1.5)
     pub seed: i64,
+    /// 생성 전체 소요 ms (T9.1 계측 — docs/11 §P0.1)
+    pub duration_ms: u64,
+}
+
+/// 진행 이벤트 코얼레싱 (T9.2, docs/11 §P1.6): 스텝마다 IPC 이벤트를 쏘지 않고
+/// 진행률이 1% 이상 변했거나 100ms가 지났을 때만 내보낸다.
+/// 고지(notice)·최종값(≥1.0)·force는 항상 통과 — 마지막 상태 유실 금지.
+pub struct ProgressCoalescer {
+    last_progress: f64,
+    last_emit: Option<std::time::Instant>,
+}
+
+impl Default for ProgressCoalescer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ProgressCoalescer {
+    const MIN_DELTA: f64 = 0.01;
+    const MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+
+    pub fn new() -> Self {
+        Self {
+            last_progress: f64::NEG_INFINITY,
+            last_emit: None,
+        }
+    }
+
+    pub fn should_emit(&mut self, progress: f64, force: bool) -> bool {
+        let recent = self
+            .last_emit
+            .is_some_and(|t| t.elapsed() < Self::MIN_INTERVAL);
+        if !force && progress < 1.0 && progress - self.last_progress < Self::MIN_DELTA && recent {
+            return false;
+        }
+        self.last_progress = progress;
+        self.last_emit = Some(std::time::Instant::now());
+        true
+    }
 }
 
 /// 스타일이 프롬프트에 기여하는 조각 (TAD §4 — 트리거워드·에센스).
@@ -221,6 +261,7 @@ pub async fn run_generation(
     cancel: &tokio::sync::watch::Receiver<bool>,
     mut on_update: impl FnMut(GenUpdate),
 ) -> Result<GenDone, AppError> {
+    let mut timer = crate::perf::StageTimer::new();
     // 1) 프리셋·스타일 로드 + 한→영 변환(§4 ①②③, T2.3) + 프롬프트 조립 (§4)
     let presets = load_presets(data_root)?;
     let preset = find_preset(&presets, &req.preset_id)?;
@@ -260,9 +301,11 @@ pub async fn run_generation(
         .size
         .unwrap_or((preset.params.width, preset.params.height));
     let seed = req.seed.unwrap_or_else(random_seed);
-    let http = reqwest::Client::new();
+    let http = crate::engine::shared_http();
+    timer.mark("prepare");
 
     // 2) 시도 루프: 원본 → (OOM 시) 해상도 하향 → SD1.5 폴백 (T1.5)
+    let mut attempts = 0u32;
     let mut attempt = Attempt {
         width,
         height,
@@ -295,9 +338,10 @@ pub async fn run_generation(
         };
         let workflow = apply_slots(template, &params)?;
         let payload = build_prompt_payload(workflow, job_id);
+        attempts += 1;
 
         let result = async {
-            let prompt_id = client::post_prompt(&http, base_url, &payload).await?;
+            let prompt_id = client::post_prompt(http, base_url, &payload).await?;
             client::track_progress(base_url, job_id, &prompt_id, cancel, |value, max| {
                 on_update(GenUpdate::Progress(value as f64 / max as f64));
             })
@@ -317,7 +361,7 @@ pub async fn run_generation(
                     Some((next, notice)) => {
                         on_update(GenUpdate::Notice(notice));
                         // 프로세스 사망이었다면 자동 재시작(T1.2)이 끝날 때까지 대기
-                        wait_engine_ready(&http, base_url, 30).await;
+                        wait_engine_ready(http, base_url, 30).await;
                         attempt = next;
                     }
                     None => return Err(err),
@@ -325,6 +369,8 @@ pub async fn run_generation(
             }
         }
     };
+
+    timer.mark("engine");
 
     if images.is_empty() {
         return Err(AppError::new(
@@ -383,12 +429,30 @@ pub async fn run_generation(
         ids.push(gen_id);
         paths.push(rel_path);
     }
+    timer.mark("persist");
+
+    // 단계별 소요를 로컬 perf.log에 기록 (T9.1 — 내용(프롬프트)은 남기지 않음)
+    crate::perf::append_perf_line(
+        data_root,
+        &timer.to_log_value(
+            "generate",
+            serde_json::json!({
+                "jobId": job_id,
+                "width": attempt.width,
+                "height": attempt.height,
+                "batch": req.count.clamp(1, 4),
+                "steps": preset.params.steps,
+                "attempts": attempts,
+            }),
+        ),
+    );
 
     Ok(GenDone {
         job_id: job_id.to_string(),
         generation_ids: ids,
         image_paths: paths,
         seed,
+        duration_ms: timer.total_ms() as u64,
     })
 }
 
@@ -408,6 +472,22 @@ mod tests {
     fn random_seed_is_nonnegative_and_varies() {
         let a = random_seed();
         assert!(a >= 0);
+    }
+
+    #[test]
+    fn coalescer_drops_tiny_rapid_updates_but_keeps_key_events() {
+        let mut c = ProgressCoalescer::new();
+        // 첫 이벤트는 항상 통과
+        assert!(c.should_emit(0.0, false));
+        // 직후 미세 진행 → 억제 (28스텝이 스텝마다 이벤트를 쏘던 문제)
+        assert!(!c.should_emit(0.005, false));
+        assert!(!c.should_emit(0.009, false));
+        // 1% 이상 변화 → 통과
+        assert!(c.should_emit(0.02, false));
+        // 고지(force)는 즉시 통과
+        assert!(c.should_emit(0.021, true));
+        // 최종값은 억제 금지 — 진행 바가 100%로 끝나야 함
+        assert!(c.should_emit(1.0, false));
     }
 
     fn essence_style() -> crate::styles::Style {

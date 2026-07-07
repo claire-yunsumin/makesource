@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::db::Db;
-use crate::engine::generation::{run_generation, GenProgress, GenUpdate, GenerateRequest};
+use crate::engine::generation::{
+    run_generation, GenProgress, GenUpdate, GenerateRequest, ProgressCoalescer,
+};
 use crate::error::AppError;
 use crate::paths;
 
@@ -96,6 +98,8 @@ pub async fn generate(
     tauri::async_runtime::spawn(async move {
         let db = app2.state::<Db>().inner().clone();
         let mut last_progress = 0.0f64;
+        // 스텝마다 이벤트를 쏘지 않는다 (T9.2, docs/11 §P1.6) — 고지는 항상 통과
+        let mut coalescer = ProgressCoalescer::new();
         let emit_update = |update: GenUpdate| {
             let (progress, notice) = match update {
                 GenUpdate::Progress(p) => {
@@ -104,6 +108,9 @@ pub async fn generate(
                 }
                 GenUpdate::Notice(text) => (last_progress, Some(text)),
             };
+            if !coalescer.should_emit(progress, notice.is_some()) {
+                return;
+            }
             let _ = app2.emit(
                 "gen://progress",
                 &GenProgress {

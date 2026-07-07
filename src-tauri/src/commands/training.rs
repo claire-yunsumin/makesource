@@ -195,7 +195,7 @@ pub async fn caption_dataset(app: AppHandle, dir: String) -> Result<Vec<CaptionI
     let script_dir = data_root.join("runtime");
     std::fs::create_dir_all(&script_dir)?;
     let script = script_dir.join("caption.py");
-    std::fs::write(&script, CAPTION_PY)?;
+    paths::write_if_changed(&script, CAPTION_PY)?;
 
     let mut child = tokio::process::Command::new(&python)
         .arg(&script)
@@ -387,6 +387,8 @@ pub async fn training_start(
             let id = job_id2.clone();
             tauri::async_runtime::spawn(async move {
                 let mut last_db_percent = -1i64;
+                // tqdm은 스텝마다 라인을 내므로 이벤트도 1%/100ms로 코얼레싱 (T9.2 §P1.6)
+                let mut coalescer = crate::engine::generation::ProgressCoalescer::new();
                 while let Some(update) = update_rx.recv().await {
                     match update {
                         TrainUpdate::Progress {
@@ -395,17 +397,19 @@ pub async fn training_start(
                             loss,
                             epoch,
                         } => {
-                            let _ = app3.emit(
-                                "train://progress",
-                                &TrainProgressEvent {
-                                    job_id: id.clone(),
-                                    progress,
-                                    eta_seconds,
-                                    loss,
-                                    epoch: epoch.map(|(c, t)| [c, t]),
-                                },
-                            );
-                            // DB 기록은 1% 단위 스로틀 (이벤트는 전부 push)
+                            if coalescer.should_emit(progress, false) {
+                                let _ = app3.emit(
+                                    "train://progress",
+                                    &TrainProgressEvent {
+                                        job_id: id.clone(),
+                                        progress,
+                                        eta_seconds,
+                                        loss,
+                                        epoch: epoch.map(|(c, t)| [c, t]),
+                                    },
+                                );
+                            }
+                            // DB 기록은 1% 단위 스로틀
                             let percent = (progress * 100.0) as i64;
                             if percent != last_db_percent {
                                 last_db_percent = percent;
