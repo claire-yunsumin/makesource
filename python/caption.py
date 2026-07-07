@@ -70,6 +70,17 @@ def selftest():
     print("selftest OK")
 
 
+def onnx_providers(ort):
+    """Apple Silicon에선 CoreML(ANE/GPU) 우선, 그 외/미지원 빌드는 CPU 폴백.
+
+    (T9.8, docs/11 §P5.1) 사용 가능한 EP와 교집합을 취하므로 어떤 환경에서도
+    안전하다 — CoreML 초기화가 실패하면 ORT가 다음 EP(CPU)로 내려간다.
+    """
+    preferred = ["CoreMLExecutionProvider", "CPUExecutionProvider"]
+    available = set(ort.get_available_providers())
+    return [p for p in preferred if p in available] or ["CPUExecutionProvider"]
+
+
 def load_wd14(hf_home):
     from huggingface_hub import hf_hub_download
     import onnxruntime as ort
@@ -84,7 +95,9 @@ def load_wd14(hf_home):
         for i, row in enumerate(csv.DictReader(f)):
             if row["category"] == "0":  # general
                 general_tags[i] = row["name"].replace("_", " ")
-    session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+    providers = onnx_providers(ort)
+    log(f"WD14 실행 프로바이더: {providers}")
+    session = ort.InferenceSession(model_path, providers=providers)
     return session, general_tags
 
 
@@ -102,13 +115,17 @@ def wd14_tag(session, general_tags, image):
     return [name for i, name in general_tags.items() if float(probs[i]) >= WD14_THRESHOLD]
 
 
-def load_florence(hf_home):
+def load_florence(hf_home, force_fp32=False):
     import torch
     from transformers import AutoModelForCausalLM, AutoProcessor
 
     device = "mps" if torch.backends.mps.is_available() else "cpu"
+    # MPS는 fp16으로 메모리 절반·속도 개선 (T9.8, docs/11 §P5.2).
+    # 수치 문제가 생기면 호출부가 force_fp32로 재로드해 폴백한다.
+    dtype = torch.float32 if (force_fp32 or device == "cpu") else torch.float16
+    log(f"Florence-2 로드: device={device} dtype={dtype}")
     model = AutoModelForCausalLM.from_pretrained(
-        FLORENCE_REPO, trust_remote_code=True, torch_dtype=torch.float32, cache_dir=hf_home
+        FLORENCE_REPO, trust_remote_code=True, torch_dtype=dtype, cache_dir=hf_home
     ).to(device)
     processor = AutoProcessor.from_pretrained(
         FLORENCE_REPO, trust_remote_code=True, cache_dir=hf_home
@@ -121,7 +138,8 @@ def florence_caption(model, processor, device, image):
     inputs = processor(text=task, images=image, return_tensors="pt").to(device)
     ids = model.generate(
         input_ids=inputs["input_ids"],
-        pixel_values=inputs["pixel_values"],
+        # 모델이 fp16이면 입력도 맞춘다 (dtype 불일치 방지)
+        pixel_values=inputs["pixel_values"].to(model.dtype),
         max_new_tokens=192,
         num_beams=3,
         do_sample=False,
@@ -168,18 +186,31 @@ def main():
         emit({"ok": False, "error": "analyze_failed", "detail": str(e)})
 
     items = []
-    for name in files:
+    fp32_retried = False
+    for i, name in enumerate(files):
         path = os.path.join(dir_path, name)
         try:
             img = Image.open(path).convert("RGB")
             tags = wd14_tag(wd14_session, general_tags, img)
-            sentence = florence_caption(florence_model, florence_processor, device, img)
+            try:
+                sentence = florence_caption(florence_model, florence_processor, device, img)
+            except Exception as e:
+                # fp16 수치 문제 폴백 (T9.8 §P5.2): fp32로 1회 재로드 후 재시도
+                if fp32_retried:
+                    raise
+                fp32_retried = True
+                log(f"fp16 캡션 실패({e}) — fp32로 폴백")
+                florence_model, florence_processor, device = load_florence(
+                    hf_home, force_fp32=True
+                )
+                sentence = florence_caption(florence_model, florence_processor, device, img)
             caption = compose_caption(sentence, tags)
         except Exception as e:
             log(f"캡션 실패 {name}: {e}")
             caption = ""
         items.append({"file": name, "caption": caption})
-        log(f"캡션 {name}: {caption[:60]}")
+        # [i/total]은 caption://progress로 실시간 중계된다 (T9.8 §P5.3)
+        log(f"[{i + 1}/{len(files)}] 캡션 {name}: {caption[:60]}")
 
     emit({"ok": True, "items": items})
 
