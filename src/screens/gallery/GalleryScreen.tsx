@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { dataDir, downloadDir } from "@tauri-apps/api/path";
@@ -12,6 +12,72 @@ import { useGenerateStore } from "../generate/store";
 import DetailModal, { type ExportFormat } from "./DetailModal";
 import { regenFormState } from "./detailMeta";
 import { buildHistoryArgs, cursorOf, isLastPage, mergePages } from "./galleryPaging";
+
+/**
+ * 갤러리 카드 1장 (T9.9, docs/11 §P6.3–4). memo로 ♥ 토글 등 목록 갱신 시
+ * 변경된 항목만 다시 그린다. content-visibility로 화면 밖 카드의 렌더 비용을
+ * 건너뛰고, contain-intrinsic-size로 스크롤바 점프를 막는다.
+ */
+const GalleryItem = memo(function GalleryItem({
+  item,
+  dataRoot,
+  onSelect,
+  onDragStart,
+}: {
+  item: Generation;
+  dataRoot: string | null;
+  onSelect: (id: string) => void;
+  onDragStart: (e: React.DragEvent, item: Generation) => void;
+}) {
+  const abs = useMemo(
+    () => (dataRoot ? joinImagePath(dataRoot, item.thumbPath || item.imagePath) : null),
+    [dataRoot, item.thumbPath, item.imagePath],
+  );
+  const src = useMemo(() => (abs ? convertFileSrc(abs) : null), [abs]);
+  const label = `${item.keywordKo ?? "이미지"}${item.presetId ? ` · ${item.presetId}` : ""}`;
+  const ratio = item.width && item.height ? item.width / item.height : 1;
+  return (
+    <button
+      type="button"
+      draggable
+      onDragStart={(e) => onDragStart(e, item)}
+      onClick={() => onSelect(item.id)}
+      aria-label={`${label} 상세 보기`}
+      className="ease-out-ui mb-4 block w-full cursor-grab break-inside-avoid overflow-hidden rounded-lg bg-surface-2 text-left shadow-card transition-opacity duration-150 hover:opacity-90"
+      style={{
+        contentVisibility: "auto",
+        containIntrinsicSize: `auto 240px auto ${Math.round(240 / ratio) + 30}px`,
+      }}
+    >
+      {src ? (
+        <img
+          src={src}
+          alt={label}
+          loading="lazy"
+          decoding="async"
+          className="w-full"
+          style={
+            item.width && item.height
+              ? { aspectRatio: `${item.width} / ${item.height}` }
+              : undefined
+          }
+        />
+      ) : (
+        <div className="flex aspect-square items-center justify-center p-4 text-center text-xs text-text-sub">
+          이미지를 불러오지 못했어요
+        </div>
+      )}
+      <span className="block truncate px-2 py-1.5 text-xs text-text-sub">
+        {label}
+        {item.favorite && (
+          <span aria-label="즐겨찾기" className="ml-1 text-error">
+            ♥
+          </span>
+        )}
+      </span>
+    </button>
+  );
+});
 
 /**
  * 갤러리 (04 §4.2): masonry 그리드 + 커서 기반 무한 스크롤(T3.1),
@@ -251,47 +317,15 @@ export default function GalleryScreen() {
 
       {/* masonry: CSS 컬럼 — 항목은 세로 분할을 피해 통째로 배치 */}
       <div className="columns-2 gap-4 md:columns-3 xl:columns-4">
-        {items.map((item) => {
-          const abs = dataRoot ? joinImagePath(dataRoot, item.thumbPath || item.imagePath) : null;
-          const label = `${item.keywordKo ?? "이미지"}${item.presetId ? ` · ${item.presetId}` : ""}`;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              draggable
-              onDragStart={(e) => handleDragStart(e, item)}
-              onClick={() => setSelectedId(item.id)}
-              aria-label={`${label} 상세 보기`}
-              className="ease-out-ui mb-4 block w-full cursor-grab break-inside-avoid overflow-hidden rounded-lg bg-surface-2 text-left shadow-card transition-opacity duration-150 hover:opacity-90"
-            >
-              {abs ? (
-                <img
-                  src={convertFileSrc(abs)}
-                  alt={label}
-                  loading="lazy"
-                  className="w-full"
-                  style={
-                    item.width && item.height
-                      ? { aspectRatio: `${item.width} / ${item.height}` }
-                      : undefined
-                  }
-                />
-              ) : (
-                <div className="flex aspect-square items-center justify-center p-4 text-center text-xs text-text-sub">
-                  이미지를 불러오지 못했어요
-                </div>
-              )}
-              <span className="block truncate px-2 py-1.5 text-xs text-text-sub">
-                {label}
-                {item.favorite && (
-                  <span aria-label="즐겨찾기" className="ml-1 text-error">
-                    ♥
-                  </span>
-                )}
-              </span>
-            </button>
-          );
-        })}
+        {items.map((item) => (
+          <GalleryItem
+            key={item.id}
+            item={item}
+            dataRoot={dataRoot}
+            onSelect={setSelectedId}
+            onDragStart={handleDragStart}
+          />
+        ))}
       </div>
 
       {loading && (

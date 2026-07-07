@@ -25,6 +25,17 @@ export default defineConfig({
       ignored: ["**/src-tauri/**"],
     },
   },
+  build: {
+    // 벤더 청크 분리 (T9.9, docs/11 §P6.1): 화면 lazy 청크가 바뀌어도
+    // react/router/zustand 벤더 캐시는 유지된다
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom", "react-router-dom", "zustand"],
+        },
+      },
+    },
+  },
   test: {
     environment: "node",
     include: ["src/**/*.{test,spec}.{ts,tsx}"],

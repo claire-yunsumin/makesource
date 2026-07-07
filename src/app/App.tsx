@@ -1,14 +1,18 @@
-import { useEffect } from "react";
+import { lazy, useEffect } from "react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { useLocale } from "../lib/i18n";
 import { settingsGet } from "../lib/tauri";
 import Layout from "./Layout";
 import BootstrapGate from "./BootstrapGate";
-import GenerateScreen from "../screens/generate/GenerateScreen";
-import GalleryScreen from "../screens/gallery/GalleryScreen";
-import StylesScreen from "../screens/styles/StylesScreen";
-import PresetsScreen from "../screens/presets/PresetsScreen";
-import SettingsScreen from "../screens/settings/SettingsScreen";
+
+// 화면 단위 코드 스플리팅 (T9.9, docs/11 §P6.1) — 첫 페인트에 필요한 건
+// 레이아웃과 첫 라우트뿐이다. 학습/에센스 마법사가 딸린 화면을 eager로 다
+// 담으면 초기 번들이 그만큼 커진다.
+const GenerateScreen = lazy(() => import("../screens/generate/GenerateScreen"));
+const GalleryScreen = lazy(() => import("../screens/gallery/GalleryScreen"));
+const StylesScreen = lazy(() => import("../screens/styles/StylesScreen"));
+const PresetsScreen = lazy(() => import("../screens/presets/PresetsScreen"));
+const SettingsScreen = lazy(() => import("../screens/settings/SettingsScreen"));
 
 /**
  * 라우팅 골격 (T0.2). 데스크톱 웹뷰에서 새로고침/딥링크 404를 피하려고 HashRouter 사용.
