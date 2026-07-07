@@ -2,9 +2,18 @@ name: Release
 
 # CLAUDE.md: vX.Y.Z 태그 push → .dmg 빌드 후 GitHub Release 업로드.
 # 서명·공증은 하지 않는다 (PRD 비기능: 공증은 유료라 선택 — 무서명 배포).
+# workflow_dispatch: 태그 push가 불가능한 환경(원격 세션은 브랜치 외 ref push가
+# 정책 차단)에서 수동 실행용. tag 입력으로 draft 릴리즈를 만들고, draft를
+# publish하는 시점에 GitHub이 해당 태그를 생성한다.
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "릴리즈 태그 (예: v0.1.2)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -40,8 +49,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "LocalBrush ${{ github.ref_name }}"
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: "LocalBrush ${{ inputs.tag || github.ref_name }}"
           releaseBody: |
             무서명 배포입니다 — 설치 방법은 README의 "설치" 절을 참고하세요.
             macOS 경고가 뜨면: "확인되지 않은 개발자"는 우클릭 → 열기로 해결되지만,
