@@ -29,7 +29,18 @@ export default function BootstrapGate({ children }: { children: ReactNode }) {
   }, []);
 
   if (passed) return <>{children}</>;
-  if (status === null) return null; // 상태 확인 중 (순간이라 스피너 없이 빈 화면)
+  if (status === null) {
+    // 상태 확인 중 (T9.9, docs/11 §P6.2): IPC 응답까지 빈 화면 대신
+    // 앱 셸 스켈레톤 — 첫 페인트가 IPC 왕복에 묶이지 않게 한다
+    return (
+      <div aria-hidden className="flex h-screen bg-bg text-text">
+        <div className="w-[72px] shrink-0 border-r border-border bg-surface" />
+        <div className="flex flex-1 items-center justify-center">
+          <span className="animate-pulse text-sm text-text-sub">준비 중이에요…</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative">

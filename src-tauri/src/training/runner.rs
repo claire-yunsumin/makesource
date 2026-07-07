@@ -209,7 +209,19 @@ pub fn build_kohya_args(
         "--sample_prompts".into(),
         layout.sample_prompts.to_string_lossy().into_owned(),
         "--mixed_precision".into(),
-        "no".into(), // MPS는 fp16 mixed에서 불안정 — 안전 기본값
+        "no".into(), // MPS는 fp16 mixed에서 불안정 — bf16은 실기기 A/B 후 (docs/11 §P4.4)
+        // ---- 학습 속도 (T9.7, docs/11 §P4) — 수학 동등·결정성 유지 인자만.
+        // unet_only+TE캐시(§P4.2)와 bf16(§P4.4)은 품질 영향 가능 → 실기기 A/B 게이트.
+        // VAE 인코딩을 잡당 1회로 — 에폭 수(4~12)만큼 반복 제거. 현재 구성은
+        // 랜덤 크롭·flip augment를 안 쓰므로 결과 동등 (§P4.1)
+        "--cache_latents".into(),
+        "--cache_latents_to_disk".into(),
+        // PyTorch 2 SDPA 어텐션 — MPS 지원, xformers(CUDA 전용) 불필요 (§P4.3)
+        "--sdpa".into(),
+        // 에폭 사이 데이터로더 워커 재기동 제거 (§P4.5)
+        "--persistent_data_loader_workers".into(),
+        "--max_data_loader_n_workers".into(),
+        "2".into(),
     ];
     for (key, value) in [
         ("--max_train_epochs", profile.max_train_epochs.to_string()),
@@ -617,6 +629,20 @@ mod tests {
         assert_eq!(find("--caption_extension"), ".txt");
         // 샘플 프롬프트 없으면 sample_every_n_epochs가 있어도 샘플 0장
         assert!(find("--sample_prompts").ends_with("sample_prompts.txt"));
+
+        // 학습 속도 인자 (T9.7, docs/11 §P4.1/4.3/4.5)
+        for flag in [
+            "--cache_latents",
+            "--cache_latents_to_disk",
+            "--sdpa",
+            "--persistent_data_loader_workers",
+        ] {
+            assert!(args.contains(&flag.to_string()), "{flag} 없음");
+        }
+        assert_eq!(find("--max_data_loader_n_workers"), "2");
+        // 품질 영향 인자는 실기기 A/B 전 미적용 (§P4.2/4.4 게이트)
+        assert!(!args.contains(&"--network_train_unet_only".to_string()));
+        assert_eq!(find("--mixed_precision"), "no");
     }
 
     #[test]

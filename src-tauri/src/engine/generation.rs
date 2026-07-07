@@ -68,6 +68,46 @@ pub struct GenDone {
     pub image_paths: Vec<String>,
     /// 이 배치에 사용된 시드 (시드 고정 재생성 — T2.4, F-1.5)
     pub seed: i64,
+    /// 생성 전체 소요 ms (T9.1 계측 — docs/11 §P0.1)
+    pub duration_ms: u64,
+}
+
+/// 진행 이벤트 코얼레싱 (T9.2, docs/11 §P1.6): 스텝마다 IPC 이벤트를 쏘지 않고
+/// 진행률이 1% 이상 변했거나 100ms가 지났을 때만 내보낸다.
+/// 고지(notice)·최종값(≥1.0)·force는 항상 통과 — 마지막 상태 유실 금지.
+pub struct ProgressCoalescer {
+    last_progress: f64,
+    last_emit: Option<std::time::Instant>,
+}
+
+impl Default for ProgressCoalescer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ProgressCoalescer {
+    const MIN_DELTA: f64 = 0.01;
+    const MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+
+    pub fn new() -> Self {
+        Self {
+            last_progress: f64::NEG_INFINITY,
+            last_emit: None,
+        }
+    }
+
+    pub fn should_emit(&mut self, progress: f64, force: bool) -> bool {
+        let recent = self
+            .last_emit
+            .is_some_and(|t| t.elapsed() < Self::MIN_INTERVAL);
+        if !force && progress < 1.0 && progress - self.last_progress < Self::MIN_DELTA && recent {
+            return false;
+        }
+        self.last_progress = progress;
+        self.last_emit = Some(std::time::Instant::now());
+        true
+    }
 }
 
 /// 스타일이 프롬프트에 기여하는 조각 (TAD §4 — 트리거워드·에센스).
@@ -193,8 +233,12 @@ pub fn output_month_dir(now_ms: i64) -> String {
 }
 
 /// 재시도 전 엔진 회복 대기 (프로세스 사망 → T1.2 자동 재시작 창구).
-async fn wait_engine_ready(http: &reqwest::Client, base_url: &str, max_secs: u64) {
-    for _ in 0..max_secs {
+/// 200ms에서 시작하는 지수 백오프 (T9.4, docs/11 §P3.5) — 1초 고정 폴링 대비
+/// 빠른 회복을 빨리 감지한다.
+pub(crate) async fn wait_engine_ready(http: &reqwest::Client, base_url: &str, max_secs: u64) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(max_secs);
+    let mut delay = std::time::Duration::from_millis(200);
+    loop {
         let ok = http
             .get(format!("{base_url}/system_stats"))
             .timeout(std::time::Duration::from_secs(2))
@@ -202,11 +246,63 @@ async fn wait_engine_ready(http: &reqwest::Client, base_url: &str, max_secs: u64
             .await
             .map(|r| r.status().is_success())
             .unwrap_or(false);
-        if ok {
+        if ok || std::time::Instant::now() >= deadline {
             return;
         }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        tokio::time::sleep(delay).await;
+        delay = (delay * 2).min(std::time::Duration::from_secs(2));
     }
+}
+
+/// 부팅 워밍업 (T9.4, docs/11 §P3.3): 기본 체크포인트를 미리 로드해 첫 생성의
+/// 콜드 스타트(모델 로드 수십 초)를 사용자 대기가 아닌 부팅 직후로 옮긴다.
+/// 64px 1스텝 더미 잡 — 출력물은 즉시 삭제, DB 미기록. LoRA/IP-Adapter는
+/// 스타일마다 달라 대상이 아니다 (기본 체크포인트만).
+pub async fn warmup(data_root: &Path, base_url: &str) -> Result<(), AppError> {
+    let http = crate::engine::shared_http();
+    wait_engine_ready(http, base_url, 60).await;
+
+    let Some(checkpoint) = resolve_checkpoint(data_root) else {
+        return Err(AppError::new(
+            "E_WARMUP_NO_MODEL",
+            "설치된 체크포인트가 없어 워밍업을 건너뛰었어요.",
+        ));
+    };
+    let params = WorkflowParams {
+        prompt: "warmup".to_string(),
+        negative: String::new(),
+        seed: 0,
+        steps: 1,
+        cfg: 1.0,
+        width: 64,
+        height: 64,
+        batch: 1,
+        checkpoint: Some(checkpoint),
+        lora: None,
+        ipadapter: None,
+    };
+    let workflow = apply_slots(SDXL_BASE, &params)?;
+    let payload = build_prompt_payload(workflow, "warmup");
+    // 취소 없음 — 송신자는 스코프 유지 (드롭하면 수신 대기가 즉시 깨어난다)
+    let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+
+    let prompt_id = client::post_prompt(http, base_url, &payload).await?;
+    let images = tokio::time::timeout(
+        std::time::Duration::from_secs(300),
+        client::track_progress(base_url, "warmup", &prompt_id, &cancel_rx, |_, _| {}),
+    )
+    .await
+    .map_err(|_| AppError::new("E_WARMUP_TIMEOUT", "워밍업이 5분 안에 끝나지 않았어요."))??;
+
+    // 더미 출력물 정리
+    for img in images {
+        let mut p = data_root.join("output");
+        if !img.subfolder.is_empty() {
+            p = p.join(&img.subfolder);
+        }
+        let _ = std::fs::remove_file(p.join(&img.filename));
+    }
+    Ok(())
 }
 
 /// 완성 흐름 실행. 성공 시 GenDone 반환.
@@ -221,6 +317,7 @@ pub async fn run_generation(
     cancel: &tokio::sync::watch::Receiver<bool>,
     mut on_update: impl FnMut(GenUpdate),
 ) -> Result<GenDone, AppError> {
+    let mut timer = crate::perf::StageTimer::new();
     // 1) 프리셋·스타일 로드 + 한→영 변환(§4 ①②③, T2.3) + 프롬프트 조립 (§4)
     let presets = load_presets(data_root)?;
     let preset = find_preset(&presets, &req.preset_id)?;
@@ -260,9 +357,11 @@ pub async fn run_generation(
         .size
         .unwrap_or((preset.params.width, preset.params.height));
     let seed = req.seed.unwrap_or_else(random_seed);
-    let http = reqwest::Client::new();
+    let http = crate::engine::shared_http();
+    timer.mark("prepare");
 
     // 2) 시도 루프: 원본 → (OOM 시) 해상도 하향 → SD1.5 폴백 (T1.5)
+    let mut attempts = 0u32;
     let mut attempt = Attempt {
         width,
         height,
@@ -295,9 +394,10 @@ pub async fn run_generation(
         };
         let workflow = apply_slots(template, &params)?;
         let payload = build_prompt_payload(workflow, job_id);
+        attempts += 1;
 
         let result = async {
-            let prompt_id = client::post_prompt(&http, base_url, &payload).await?;
+            let prompt_id = client::post_prompt(http, base_url, &payload).await?;
             client::track_progress(base_url, job_id, &prompt_id, cancel, |value, max| {
                 on_update(GenUpdate::Progress(value as f64 / max as f64));
             })
@@ -317,7 +417,7 @@ pub async fn run_generation(
                     Some((next, notice)) => {
                         on_update(GenUpdate::Notice(notice));
                         // 프로세스 사망이었다면 자동 재시작(T1.2)이 끝날 때까지 대기
-                        wait_engine_ready(&http, base_url, 30).await;
+                        wait_engine_ready(http, base_url, 30).await;
                         attempt = next;
                     }
                     None => return Err(err),
@@ -325,6 +425,8 @@ pub async fn run_generation(
             }
         }
     };
+
+    timer.mark("engine");
 
     if images.is_empty() {
         return Err(AppError::new(
@@ -351,7 +453,7 @@ pub async fn run_generation(
         };
         let gen_id = uuid::Uuid::new_v4().to_string();
         let rel_path = format!("{month_rel}/{gen_id}.png");
-        std::fs::rename(&src, data_root.join(&rel_path)).map_err(|e| {
+        crate::paths::move_file(&src, &data_root.join(&rel_path)).map_err(|e| {
             AppError::with_detail(
                 "E_OUTPUT_MOVE",
                 "생성된 이미지를 옮기지 못했어요.",
@@ -363,7 +465,8 @@ pub async fn run_generation(
             id: gen_id.clone(),
             created_at: now_ms,
             image_path: rel_path.clone(),
-            thumb_path: rel_path.clone(), // 썸네일 생성은 갤러리(M3)에서
+            // 일단 원본과 동일하게 — 백그라운드 썸네일(T9.3)이 완료되면 갱신
+            thumb_path: rel_path.clone(),
             keyword_ko: Some(req.keyword.clone()),
             prompt_final: prompt.clone(),
             negative: Some(negative.clone()),
@@ -383,12 +486,38 @@ pub async fn run_generation(
         ids.push(gen_id);
         paths.push(rel_path);
     }
+    timer.mark("persist");
+
+    // 썸네일은 백그라운드 후처리 (T9.3, docs/11 §P2.1) — gen://done을 막지
+    // 않는다. 완료 전까지 갤러리는 thumbPath(=원본) 폴백으로 동작.
+    crate::thumbs::spawn_generate(
+        db.clone(),
+        data_root.to_path_buf(),
+        ids.iter().cloned().zip(paths.iter().cloned()).collect(),
+    );
+
+    // 단계별 소요를 로컬 perf.log에 기록 (T9.1 — 내용(프롬프트)은 남기지 않음)
+    crate::perf::append_perf_line(
+        data_root,
+        &timer.to_log_value(
+            "generate",
+            serde_json::json!({
+                "jobId": job_id,
+                "width": attempt.width,
+                "height": attempt.height,
+                "batch": req.count.clamp(1, 4),
+                "steps": preset.params.steps,
+                "attempts": attempts,
+            }),
+        ),
+    );
 
     Ok(GenDone {
         job_id: job_id.to_string(),
         generation_ids: ids,
         image_paths: paths,
         seed,
+        duration_ms: timer.total_ms() as u64,
     })
 }
 
@@ -408,6 +537,22 @@ mod tests {
     fn random_seed_is_nonnegative_and_varies() {
         let a = random_seed();
         assert!(a >= 0);
+    }
+
+    #[test]
+    fn coalescer_drops_tiny_rapid_updates_but_keeps_key_events() {
+        let mut c = ProgressCoalescer::new();
+        // 첫 이벤트는 항상 통과
+        assert!(c.should_emit(0.0, false));
+        // 직후 미세 진행 → 억제 (28스텝이 스텝마다 이벤트를 쏘던 문제)
+        assert!(!c.should_emit(0.005, false));
+        assert!(!c.should_emit(0.009, false));
+        // 1% 이상 변화 → 통과
+        assert!(c.should_emit(0.02, false));
+        // 고지(force)는 즉시 통과
+        assert!(c.should_emit(0.021, true));
+        // 최종값은 억제 금지 — 진행 바가 100%로 끝나야 함
+        assert!(c.should_emit(1.0, false));
     }
 
     fn essence_style() -> crate::styles::Style {

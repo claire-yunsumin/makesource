@@ -100,6 +100,8 @@ export interface GenDoneEvent {
   imagePaths: string[];
   /** 이 배치에 사용된 시드 (시드 고정 재생성 — F-1.5) */
   seed: number;
+  /** 생성 전체 소요 ms (T9.1 계측) */
+  durationMs: number;
 }
 
 /** gen://error 페이로드 */

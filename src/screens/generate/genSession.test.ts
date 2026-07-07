@@ -70,6 +70,7 @@ describe("applyDone", () => {
       generationIds: ["g1", "g2"],
       imagePaths: ["images/1.png", "images/2.png"],
       seed: 1234,
+      durationMs: 12000,
     });
     expect(s.phase).toBe("idle");
     expect(s.jobId).toBeNull();
@@ -80,13 +81,15 @@ describe("applyDone", () => {
 
   it("폴백 고지는 완료 후에도 유지한다", () => {
     let s = applyProgress(generating(), { jobId: "job-1", progress: 0.3, notice: "폴백 고지" });
-    s = applyDone(s, { jobId: "job-1", generationIds: [], imagePaths: [], seed: 1 });
+    s = applyDone(s, { jobId: "job-1", generationIds: [], imagePaths: [], seed: 1, durationMs: 1 });
     expect(s.notice).toBe("폴백 고지");
   });
 
   it("다른 잡의 완료는 무시한다", () => {
     const s = generating();
-    expect(applyDone(s, { jobId: "other", generationIds: [], imagePaths: [], seed: 1 })).toBe(s);
+    expect(
+      applyDone(s, { jobId: "other", generationIds: [], imagePaths: [], seed: 1, durationMs: 1 }),
+    ).toBe(s);
   });
 });
 
@@ -125,6 +128,7 @@ describe("toggleFavorite", () => {
       generationIds: ["g1", "g2"],
       imagePaths: ["images/1.png", "images/2.png"],
       seed: 7,
+      durationMs: 1,
     });
 
   it("해당 id만 토글한다", () => {

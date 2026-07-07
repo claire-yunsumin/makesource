@@ -132,7 +132,7 @@ pub async fn track_progress(
         .await
         .map_err(|e| AppError::with_detail("E_ENGINE_WS", "엔진 연결이 끊어졌어요.", e))?;
 
-    let http = reqwest::Client::new();
+    let http = crate::engine::shared_http();
     let mut images: Vec<OutputImage> = Vec::new();
     let mut cancel = cancel.clone();
 
@@ -140,7 +140,7 @@ pub async fn track_progress(
         tokio::select! {
             _ = cancel.changed() => {
                 if *cancel.borrow() {
-                    let _ = interrupt(&http, base_url).await;
+                    let _ = interrupt(http, base_url).await;
                     return Err(AppError::new("E_CANCELED", "생성을 취소했어요."));
                 }
             }

@@ -237,7 +237,7 @@ pub async fn export_image(
         let script_dir = data_root.join("runtime");
         std::fs::create_dir_all(&script_dir)?;
         let script = script_dir.join("remove_bg.py");
-        std::fs::write(&script, REMOVE_BG_PY)?;
+        paths::write_if_changed(&script, REMOVE_BG_PY)?;
         run_remove_bg(
             &python,
             &script,

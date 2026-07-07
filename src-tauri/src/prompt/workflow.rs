@@ -48,14 +48,36 @@ pub struct WorkflowParams {
     pub ipadapter: Option<IpAdapterParams>,
 }
 
+/// 템플릿 파싱 캐시 (T9.2, docs/11 §P1.5) — 내장 템플릿 3종이 생성마다
+/// 재파싱되는 것을 막는다. 키는 내용 문자열 자체 (CLAUDE.md 주의: `include_str!`
+/// const는 사용처마다 인라인되므로 포인터가 아니라 내용으로 비교).
+fn parse_template_cached(template_json: &str) -> Result<Map<String, Value>, AppError> {
+    use std::collections::HashMap;
+    static CACHE: std::sync::Mutex<Option<HashMap<String, Map<String, Value>>>> =
+        std::sync::Mutex::new(None);
+
+    if let Ok(guard) = CACHE.lock() {
+        if let Some(map) = guard.as_ref().and_then(|c| c.get(template_json)) {
+            return Ok(map.clone());
+        }
+    }
+    let workflow: Map<String, Value> = serde_json::from_str(template_json).map_err(|e| {
+        AppError::with_detail("E_TEMPLATE_PARSE", "워크플로 템플릿을 읽지 못했어요.", e)
+    })?;
+    if let Ok(mut guard) = CACHE.lock() {
+        guard
+            .get_or_insert_with(HashMap::new)
+            .insert(template_json.to_string(), workflow.clone());
+    }
+    Ok(workflow)
+}
+
 /// 템플릿 JSON에 슬롯 값을 주입해 완성된 워크플로를 만든다.
 /// - 알 수 없는 슬롯 이름 → E_SLOT_UNKNOWN
 /// - 필요한 값이 없는 슬롯(lora/ipadapter 등) → E_SLOT_MISSING
 /// - 출력에는 `_slot` 키가 남지 않는다
 pub fn apply_slots(template_json: &str, params: &WorkflowParams) -> Result<Value, AppError> {
-    let mut workflow: Map<String, Value> = serde_json::from_str(template_json).map_err(|e| {
-        AppError::with_detail("E_TEMPLATE_PARSE", "워크플로 템플릿을 읽지 못했어요.", e)
-    })?;
+    let mut workflow = parse_template_cached(template_json)?;
 
     for (node_id, node) in workflow.iter_mut() {
         let Some(node_obj) = node.as_object_mut() else {

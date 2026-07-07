@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use sqlx::SqlitePool;
 
 pub mod models;
@@ -46,9 +46,14 @@ impl Db {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent).map_err(sqlx::Error::Io)?;
         }
+        // WAL: 생성 완료 시 쓰기와 갤러리 읽기의 동시성 확보 (T9.2, docs/11 §P1.2)
         let opts = SqliteConnectOptions::new()
             .filename(db_path)
-            .create_if_missing(true);
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal)
+            .busy_timeout(std::time::Duration::from_secs(5))
+            .foreign_keys(true);
         let pool = SqlitePoolOptions::new().connect_with(opts).await?;
         MIGRATOR.run(&pool).await?;
         Ok(Self { pool })
@@ -151,6 +156,42 @@ impl Db {
         qb.push(" ORDER BY created_at DESC, id DESC LIMIT ")
             .push_bind(limit);
         qb.build_query_as::<Generation>()
+            .fetch_all(&self.pool)
+            .await
+    }
+
+    /// 썸네일 생성 후 경로 갱신 (T9.3).
+    pub async fn set_thumb_path(&self, id: &str, thumb_path: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE generations SET thumb_path = ? WHERE id = ?")
+            .bind(thumb_path)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// 썸네일이 없는(thumb_path == image_path) 행을 오래된 순으로 (T9.3 백필).
+    /// 반환: (created_at, id, image_path). cursor는 직전 페이지 마지막 (created_at, id).
+    pub async fn list_thumbless(
+        &self,
+        limit: i64,
+        cursor: Option<(i64, &str)>,
+    ) -> Result<Vec<(i64, String, String)>, sqlx::Error> {
+        let mut qb = sqlx::QueryBuilder::new(
+            "SELECT created_at, id, image_path FROM generations WHERE thumb_path = image_path",
+        );
+        if let Some((created_at, id)) = cursor {
+            qb.push(" AND (created_at > ")
+                .push_bind(created_at)
+                .push(" OR (created_at = ")
+                .push_bind(created_at)
+                .push(" AND id > ")
+                .push_bind(id.to_string())
+                .push("))");
+        }
+        qb.push(" ORDER BY created_at ASC, id ASC LIMIT ")
+            .push_bind(limit);
+        qb.build_query_as::<(i64, String, String)>()
             .fetch_all(&self.pool)
             .await
     }
@@ -412,6 +453,33 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(p2[0].id, "cabin2");
+    }
+
+    #[tokio::test]
+    async fn filter_queries_use_secondary_indices() {
+        // T9.2 (docs/11 §P1.3): ♥/스타일 필터가 풀스캔이 아니라 보조 인덱스를 타는지
+        let db = Db::connect_in_memory().await.unwrap();
+        for (sql, index) in [
+            (
+                "EXPLAIN QUERY PLAN SELECT * FROM generations WHERE favorite = 1 \
+                 ORDER BY created_at DESC, id DESC LIMIT 10",
+                "idx_gen_fav",
+            ),
+            (
+                "EXPLAIN QUERY PLAN SELECT * FROM generations WHERE style_id = 's1' \
+                 ORDER BY created_at DESC, id DESC LIMIT 10",
+                "idx_gen_style",
+            ),
+        ] {
+            let rows: Vec<(i64, i64, i64, String)> =
+                sqlx::query_as(sql).fetch_all(&db.pool).await.unwrap();
+            let plan = rows
+                .iter()
+                .map(|r| r.3.as_str())
+                .collect::<Vec<_>>()
+                .join(" | ");
+            assert!(plan.contains(index), "{index} 미사용: {plan}");
+        }
     }
 
     #[test]

@@ -61,18 +61,52 @@ pub fn contains_hangul(text: &str) -> bool {
     })
 }
 
+/// 내장 사전은 1회만 파싱 (T9.2, docs/11 §P1.5 — 번역 미리보기가 키 입력마다
+/// 이 경로를 타므로 매 호출 재파싱하지 않는다).
+fn default_entries() -> &'static HashMap<String, String> {
+    static ENTRIES: std::sync::OnceLock<HashMap<String, String>> = std::sync::OnceLock::new();
+    ENTRIES.get_or_init(|| {
+        serde_json::from_str::<DictFile>(DEFAULT_DICT)
+            .map(|f| f.entries)
+            .unwrap_or_default()
+    })
+}
+
+/// 사용자 사전 mtime 캐시: 파일이 바뀌지 않았으면 재읽기·재파싱을 건너뛴다.
+/// (외부 편집 시나리오가 있어 mtime 확인은 유지 — 프리셋 파일 공유와 같은 이유)
+fn load_user_dict_cached(path: &Path) -> Option<HashMap<String, String>> {
+    type Cached = (PathBuf, std::time::SystemTime, HashMap<String, String>);
+    static CACHE: std::sync::Mutex<Option<Cached>> = std::sync::Mutex::new(None);
+
+    let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok()?;
+    if let Ok(guard) = CACHE.lock() {
+        if let Some((p, t, map)) = guard.as_ref() {
+            if p == path && *t == mtime {
+                return Some(map.clone());
+            }
+        }
+    }
+    let text = std::fs::read_to_string(path).ok()?;
+    match serde_json::from_str::<DictFile>(&text) {
+        Ok(user) => {
+            if let Ok(mut guard) = CACHE.lock() {
+                *guard = Some((path.to_path_buf(), mtime, user.entries.clone()));
+            }
+            Some(user.entries)
+        }
+        Err(e) => {
+            eprintln!("사용자 사전 파싱 실패({}): {e}", path.display());
+            None
+        }
+    }
+}
+
 /// 사전 로드: 내장 기본 + 데이터 루트 `dict.ko-en.json` 병합(사용자 항목 우선).
 /// 사용자 파일이 깨져 있으면 무시하고 기본만 사용한다 (생성 흐름을 막지 않기 위해).
 pub fn load_dict(data_root: &Path) -> HashMap<String, String> {
-    let mut entries = serde_json::from_str::<DictFile>(DEFAULT_DICT)
-        .map(|f| f.entries)
-        .unwrap_or_default();
-    let user_path = data_root.join("dict.ko-en.json");
-    if let Ok(text) = std::fs::read_to_string(&user_path) {
-        match serde_json::from_str::<DictFile>(&text) {
-            Ok(user) => entries.extend(user.entries),
-            Err(e) => eprintln!("사용자 사전 파싱 실패({}): {e}", user_path.display()),
-        }
+    let mut entries = default_entries().clone();
+    if let Some(user) = load_user_dict_cached(&data_root.join("dict.ko-en.json")) {
+        entries.extend(user);
     }
     entries
 }
@@ -126,11 +160,12 @@ fn venv_python(data_root: &Path) -> PathBuf {
 }
 
 /// 내장 translate.py를 데이터 루트에 기록하고 경로를 돌려준다.
+/// 내용이 같으면 재기록하지 않는다 (T9.2 §P1.7).
 fn ensure_script(data_root: &Path) -> std::io::Result<PathBuf> {
     let dir = data_root.join("runtime");
     std::fs::create_dir_all(&dir)?;
     let path = dir.join("translate.py");
-    std::fs::write(&path, TRANSLATE_PY)?;
+    crate::paths::write_if_changed(&path, TRANSLATE_PY)?;
     Ok(path)
 }
 
@@ -301,6 +336,21 @@ mod tests {
         std::fs::write(dir.path().join("dict.ko-en.json"), "not json").unwrap();
         let dict = load_dict(dir.path());
         assert_eq!(dict.get("로봇").unwrap(), "robot");
+    }
+
+    #[test]
+    fn user_dict_cache_reloads_on_file_change() {
+        // T9.2 (docs/11 §P1.5): mtime 캐시가 갱신을 놓치면 안 된다
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("dict.ko-en.json");
+        std::fs::write(&path, r#"{"schemaVersion":1,"entries":{"가":"a"}}"#).unwrap();
+        assert_eq!(load_dict(dir.path()).get("가").unwrap(), "a");
+        // 캐시 히트 (같은 mtime)
+        assert_eq!(load_dict(dir.path()).get("가").unwrap(), "a");
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&path, r#"{"schemaVersion":1,"entries":{"가":"b"}}"#).unwrap();
+        assert_eq!(load_dict(dir.path()).get("가").unwrap(), "b");
     }
 
     #[test]

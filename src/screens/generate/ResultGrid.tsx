@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { joinImagePath } from "../../lib/imagePath";
 import type { GenSession } from "./genSession";
@@ -16,8 +17,12 @@ interface ResultGridProps {
   onUseSeed: () => void;
 }
 
-/** 우측 결과 영역 (04 §4.1): 빈 상태 / 셀별 진행 오버레이 / 결과 2×2 그리드 + hover 액션. */
-export default function ResultGrid({
+/**
+ * 우측 결과 영역 (04 §4.1): 빈 상태 / 셀별 진행 오버레이 / 결과 2×2 그리드 + hover 액션.
+ * memo (T9.9, docs/11 §P6.5): 좌패널 폼 상태(장수·크기·시드 등) 변경이 결과
+ * 그리드 재렌더로 번지지 않게 한다.
+ */
+function ResultGrid({
   session,
   dataRoot,
   altLabel,
@@ -136,3 +141,5 @@ export default function ResultGrid({
     </div>
   );
 }
+
+export default memo(ResultGrid);

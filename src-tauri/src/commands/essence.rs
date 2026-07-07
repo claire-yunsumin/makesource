@@ -79,7 +79,7 @@ pub async fn essence_create(app: AppHandle, args: EssenceArgs) -> Result<Essence
     let script_dir = data_root.join("runtime");
     std::fs::create_dir_all(&script_dir)?;
     let script = script_dir.join("essence.py");
-    std::fs::write(&script, ESSENCE_PY)?;
+    paths::write_if_changed(&script, ESSENCE_PY)?;
 
     let mut child = tokio::process::Command::new(&python)
         .arg(&script)
