@@ -1,6 +1,6 @@
 [package]
 name = "localbrush"
-version = "0.1.1"
+version = "0.1.2"
 description = "LocalBrush — 로컬 AI 브랜드 그래픽 생성기"
 authors = ["claire-yunsumin"]
 edition = "2021"
