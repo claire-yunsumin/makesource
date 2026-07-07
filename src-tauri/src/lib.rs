@@ -14,6 +14,7 @@ pub mod prompt;
 pub mod settings;
 pub mod storage;
 pub mod styles;
+pub mod thumbs;
 pub mod training;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -29,7 +30,14 @@ pub fn run() {
             // app.db 생성 + 마이그레이션 (TAD §3)
             let data_root = paths::app_data_root(&app.path().data_dir()?);
             let db = tauri::async_runtime::block_on(db::Db::connect(&paths::db_path(&data_root)))?;
-            app.manage(db);
+            app.manage(db.clone());
+            // 썸네일 없는 과거 레코드 백필 (T9.3) — 시작을 막지 않는 백그라운드,
+            // 장당 250ms 스로틀로 초기 IO 독점 방지
+            tauri::async_runtime::spawn(thumbs::backfill(
+                db,
+                data_root.clone(),
+                std::time::Duration::from_millis(250),
+            ));
             app.manage(commands::bootstrap::BootstrapJob::default());
             app.manage(commands::generate::GenJobs::default());
             app.manage(commands::training::KohyaInstallJob::default());
@@ -50,7 +58,7 @@ pub fn run() {
             app.manage(engine_state);
 
             let bootstrap_ready = bootstrap::state::BootstrapState::load(
-                &bootstrap::Bootstrapper::new(data_root).state_path(),
+                &bootstrap::Bootstrapper::new(data_root.clone()).state_path(),
             )
             .is_ready();
             if bootstrap_ready && config.is_installed() {
@@ -62,6 +70,17 @@ pub fn run() {
                         // 기동 실패는 치명적이지 않음 — engine_health가 false를 반환하고
                         // UI에서 재시작 유도 (04 §6)
                         eprintln!("엔진 자동 기동 실패: {e}");
+                    }
+                });
+                // 부팅 워밍업 (T9.4): 기본 체크포인트를 미리 로드해 첫 생성의
+                // 콜드 스타트 제거. 실패해도 생성은 정상 동작(첫 생성이 느릴 뿐).
+                let warm_manager = manager.clone();
+                let warm_root = data_root.clone();
+                let warm_url = config.base_url();
+                tauri::async_runtime::spawn(async move {
+                    match engine::generation::warmup(&warm_root, &warm_url).await {
+                        Ok(()) => warm_manager.set_model_loaded(true),
+                        Err(e) => eprintln!("엔진 워밍업 실패(무시됨): {e}"),
                     }
                 });
             }

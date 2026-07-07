@@ -233,8 +233,12 @@ pub fn output_month_dir(now_ms: i64) -> String {
 }
 
 /// 재시도 전 엔진 회복 대기 (프로세스 사망 → T1.2 자동 재시작 창구).
-async fn wait_engine_ready(http: &reqwest::Client, base_url: &str, max_secs: u64) {
-    for _ in 0..max_secs {
+/// 200ms에서 시작하는 지수 백오프 (T9.4, docs/11 §P3.5) — 1초 고정 폴링 대비
+/// 빠른 회복을 빨리 감지한다.
+pub(crate) async fn wait_engine_ready(http: &reqwest::Client, base_url: &str, max_secs: u64) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(max_secs);
+    let mut delay = std::time::Duration::from_millis(200);
+    loop {
         let ok = http
             .get(format!("{base_url}/system_stats"))
             .timeout(std::time::Duration::from_secs(2))
@@ -242,11 +246,63 @@ async fn wait_engine_ready(http: &reqwest::Client, base_url: &str, max_secs: u64
             .await
             .map(|r| r.status().is_success())
             .unwrap_or(false);
-        if ok {
+        if ok || std::time::Instant::now() >= deadline {
             return;
         }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        tokio::time::sleep(delay).await;
+        delay = (delay * 2).min(std::time::Duration::from_secs(2));
     }
+}
+
+/// 부팅 워밍업 (T9.4, docs/11 §P3.3): 기본 체크포인트를 미리 로드해 첫 생성의
+/// 콜드 스타트(모델 로드 수십 초)를 사용자 대기가 아닌 부팅 직후로 옮긴다.
+/// 64px 1스텝 더미 잡 — 출력물은 즉시 삭제, DB 미기록. LoRA/IP-Adapter는
+/// 스타일마다 달라 대상이 아니다 (기본 체크포인트만).
+pub async fn warmup(data_root: &Path, base_url: &str) -> Result<(), AppError> {
+    let http = crate::engine::shared_http();
+    wait_engine_ready(http, base_url, 60).await;
+
+    let Some(checkpoint) = resolve_checkpoint(data_root) else {
+        return Err(AppError::new(
+            "E_WARMUP_NO_MODEL",
+            "설치된 체크포인트가 없어 워밍업을 건너뛰었어요.",
+        ));
+    };
+    let params = WorkflowParams {
+        prompt: "warmup".to_string(),
+        negative: String::new(),
+        seed: 0,
+        steps: 1,
+        cfg: 1.0,
+        width: 64,
+        height: 64,
+        batch: 1,
+        checkpoint: Some(checkpoint),
+        lora: None,
+        ipadapter: None,
+    };
+    let workflow = apply_slots(SDXL_BASE, &params)?;
+    let payload = build_prompt_payload(workflow, "warmup");
+    // 취소 없음 — 송신자는 스코프 유지 (드롭하면 수신 대기가 즉시 깨어난다)
+    let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+
+    let prompt_id = client::post_prompt(http, base_url, &payload).await?;
+    let images = tokio::time::timeout(
+        std::time::Duration::from_secs(300),
+        client::track_progress(base_url, "warmup", &prompt_id, &cancel_rx, |_, _| {}),
+    )
+    .await
+    .map_err(|_| AppError::new("E_WARMUP_TIMEOUT", "워밍업이 5분 안에 끝나지 않았어요."))??;
+
+    // 더미 출력물 정리
+    for img in images {
+        let mut p = data_root.join("output");
+        if !img.subfolder.is_empty() {
+            p = p.join(&img.subfolder);
+        }
+        let _ = std::fs::remove_file(p.join(&img.filename));
+    }
+    Ok(())
 }
 
 /// 완성 흐름 실행. 성공 시 GenDone 반환.
@@ -397,7 +453,7 @@ pub async fn run_generation(
         };
         let gen_id = uuid::Uuid::new_v4().to_string();
         let rel_path = format!("{month_rel}/{gen_id}.png");
-        std::fs::rename(&src, data_root.join(&rel_path)).map_err(|e| {
+        crate::paths::move_file(&src, &data_root.join(&rel_path)).map_err(|e| {
             AppError::with_detail(
                 "E_OUTPUT_MOVE",
                 "생성된 이미지를 옮기지 못했어요.",
@@ -409,7 +465,8 @@ pub async fn run_generation(
             id: gen_id.clone(),
             created_at: now_ms,
             image_path: rel_path.clone(),
-            thumb_path: rel_path.clone(), // 썸네일 생성은 갤러리(M3)에서
+            // 일단 원본과 동일하게 — 백그라운드 썸네일(T9.3)이 완료되면 갱신
+            thumb_path: rel_path.clone(),
             keyword_ko: Some(req.keyword.clone()),
             prompt_final: prompt.clone(),
             negative: Some(negative.clone()),
@@ -430,6 +487,14 @@ pub async fn run_generation(
         paths.push(rel_path);
     }
     timer.mark("persist");
+
+    // 썸네일은 백그라운드 후처리 (T9.3, docs/11 §P2.1) — gen://done을 막지
+    // 않는다. 완료 전까지 갤러리는 thumbPath(=원본) 폴백으로 동작.
+    crate::thumbs::spawn_generate(
+        db.clone(),
+        data_root.to_path_buf(),
+        ids.iter().cloned().zip(paths.iter().cloned()).collect(),
+    );
 
     // 단계별 소요를 로컬 perf.log에 기록 (T9.1 — 내용(프롬프트)은 남기지 않음)
     crate::perf::append_perf_line(

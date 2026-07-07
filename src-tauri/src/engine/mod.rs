@@ -48,6 +48,8 @@ impl EngineConfig {
 
     /// ComfyUI 기동 인자 (TAD §6 명세 + --base-directory).
     /// --base-directory로 모델(models/)·출력(output/)을 앱 데이터 루트 기준으로 통일 (TAD §3).
+    /// --preview-method none: 앱이 스텝별 프리뷰를 표시하지 않으므로 프리뷰
+    /// 이미지 계산은 순손실 — 끈다 (T9.4, docs/11 §P3.1).
     pub fn spawn_spec(&self) -> SpawnSpec {
         SpawnSpec {
             program: self.python.clone(),
@@ -59,6 +61,8 @@ impl EngineConfig {
                 self.port.to_string(),
                 "--base-directory".into(),
                 self.data_root.to_string_lossy().into_owned(),
+                "--preview-method".into(),
+                "none".into(),
             ],
         }
     }
@@ -118,6 +122,8 @@ pub struct EngineManager {
     /// 고아 엔진 정리용 pid 파일 (앱이 비정상 종료돼도 다음 기동 때 회수)
     pid_path: Option<PathBuf>,
     inner: Arc<Mutex<Inner>>,
+    /// 워밍업(T9.4)이 기본 체크포인트를 로드했는지 — engine_health.model_loaded
+    model_loaded: std::sync::atomic::AtomicBool,
 }
 
 impl EngineManager {
@@ -133,7 +139,18 @@ impl EngineManager {
                 restarts_left: Self::RESTART_LIMIT,
                 shutting_down: false,
             })),
+            model_loaded: std::sync::atomic::AtomicBool::new(false),
         })
+    }
+
+    /// 워밍업 완료(또는 모델 언로드 추정) 표식 (T9.4).
+    pub fn set_model_loaded(&self, loaded: bool) {
+        self.model_loaded
+            .store(loaded, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn model_loaded(&self) -> bool {
+        self.model_loaded.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// 이전 실행이 남긴 고아 엔진을 pid 파일로 찾아 정리한다.
@@ -319,7 +336,7 @@ impl EngineManager {
 }
 
 /// 헬스체크: 프로세스 생존 + `/system_stats` 응답 (TAD §6).
-/// model_loaded는 첫 생성 워크플로 연동(T1.4)에서 채운다.
+/// model_loaded는 부팅 워밍업(T9.4, docs/11 §P3.3)이 채운다.
 pub async fn check_health(
     manager: &EngineManager,
     client: &reqwest::Client,
@@ -340,7 +357,7 @@ pub async fn check_health(
         .unwrap_or(false);
     EngineHealth {
         running,
-        model_loaded: false,
+        model_loaded: running && manager.model_loaded(),
     }
 }
 
@@ -381,7 +398,9 @@ mod tests {
                 "--port",
                 "8188",
                 "--base-directory",
-                "/data/LocalBrush"
+                "/data/LocalBrush",
+                "--preview-method",
+                "none"
             ]
         );
         assert_eq!(cfg.health_url(), "http://127.0.0.1:8188/system_stats");

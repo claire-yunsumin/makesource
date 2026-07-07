@@ -34,7 +34,11 @@ pub async fn settings_save(app: AppHandle, settings: AppSettings) -> Result<(), 
 
 #[tauri::command]
 pub async fn models_list(app: AppHandle) -> Result<Vec<ModelEntry>, AppError> {
-    Ok(storage::scan_models(&data_root(&app)?))
+    // 수십 GB 모델 폴더의 재귀 워크 — 런타임 스레드를 막지 않는다 (T9.10)
+    let root = data_root(&app)?;
+    tauri::async_runtime::spawn_blocking(move || storage::scan_models(&root))
+        .await
+        .map_err(|e| AppError::with_detail("E_STORAGE", "저장 공간을 조회하지 못했어요.", e))
 }
 
 #[derive(Debug, Serialize)]
@@ -45,9 +49,11 @@ pub struct CacheStats {
 
 #[tauri::command]
 pub async fn cache_stats(app: AppHandle) -> Result<CacheStats, AppError> {
-    Ok(CacheStats {
-        size_bytes: storage::cache_size(&data_root(&app)?),
-    })
+    let root = data_root(&app)?;
+    let size_bytes = tauri::async_runtime::spawn_blocking(move || storage::cache_size(&root))
+        .await
+        .map_err(|e| AppError::with_detail("E_STORAGE", "저장 공간을 조회하지 못했어요.", e))?;
+    Ok(CacheStats { size_bytes })
 }
 
 #[derive(Debug, Serialize)]
@@ -58,7 +64,10 @@ pub struct CacheClearResult {
 
 #[tauri::command]
 pub async fn cache_clear(app: AppHandle) -> Result<CacheClearResult, AppError> {
-    let freed = storage::clear_cache(&data_root(&app)?)
+    let root = data_root(&app)?;
+    let freed = tauri::async_runtime::spawn_blocking(move || storage::clear_cache(&root))
+        .await
+        .map_err(|e| AppError::with_detail("E_STORAGE", "저장 공간을 조회하지 못했어요.", e))?
         .map_err(|e| AppError::with_detail("E_CACHE_CLEAR", "캐시를 정리하지 못했어요.", e))?;
     Ok(CacheClearResult { freed_bytes: freed })
 }

@@ -21,6 +21,19 @@ pub fn db_path(app_data_root: &Path) -> PathBuf {
     app_data_root.join("app.db")
 }
 
+/// 파일 이동: rename 시도 후 실패하면 copy+삭제 (T9.10, docs/11 §P7.2).
+/// rename은 크로스 볼륨(사용자가 저장 위치를 외장 디스크로 옮긴 경우 등)에서
+/// 실패한다 — F-5.2 저장 위치 변경을 대비한 폴백.
+pub fn move_file(src: &Path, dst: &Path) -> std::io::Result<()> {
+    match std::fs::rename(src, dst) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            std::fs::copy(src, dst)?;
+            std::fs::remove_file(src)
+        }
+    }
+}
+
 /// 내용이 다를 때만 파일을 쓴다 (T9.2, docs/11 §P1.7).
 /// 내장 파이썬 스크립트가 호출마다 디스크에 재기록되는 것을 막는다.
 pub fn write_if_changed(path: &Path, content: &str) -> std::io::Result<()> {
@@ -49,6 +62,22 @@ mod tests {
     fn db_path_is_app_db_under_root() {
         let root = Path::new("/data/LocalBrush");
         assert_eq!(db_path(root), Path::new("/data/LocalBrush/app.db"));
+    }
+
+    #[test]
+    fn move_file_moves_and_removes_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("a.png");
+        let dst = dir.path().join("out/b.png");
+        std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
+        std::fs::write(&src, b"img").unwrap();
+
+        move_file(&src, &dst).unwrap();
+        assert!(!src.exists());
+        assert_eq!(std::fs::read(&dst).unwrap(), b"img");
+
+        // 원본이 없으면 에러 전파
+        assert!(move_file(&src, &dst).is_err());
     }
 
     #[test]

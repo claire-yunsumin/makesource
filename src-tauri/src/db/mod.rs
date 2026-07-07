@@ -160,6 +160,42 @@ impl Db {
             .await
     }
 
+    /// 썸네일 생성 후 경로 갱신 (T9.3).
+    pub async fn set_thumb_path(&self, id: &str, thumb_path: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE generations SET thumb_path = ? WHERE id = ?")
+            .bind(thumb_path)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// 썸네일이 없는(thumb_path == image_path) 행을 오래된 순으로 (T9.3 백필).
+    /// 반환: (created_at, id, image_path). cursor는 직전 페이지 마지막 (created_at, id).
+    pub async fn list_thumbless(
+        &self,
+        limit: i64,
+        cursor: Option<(i64, &str)>,
+    ) -> Result<Vec<(i64, String, String)>, sqlx::Error> {
+        let mut qb = sqlx::QueryBuilder::new(
+            "SELECT created_at, id, image_path FROM generations WHERE thumb_path = image_path",
+        );
+        if let Some((created_at, id)) = cursor {
+            qb.push(" AND (created_at > ")
+                .push_bind(created_at)
+                .push(" OR (created_at = ")
+                .push_bind(created_at)
+                .push(" AND id > ")
+                .push_bind(id.to_string())
+                .push("))");
+        }
+        qb.push(" ORDER BY created_at ASC, id ASC LIMIT ")
+            .push_bind(limit);
+        qb.build_query_as::<(i64, String, String)>()
+            .fetch_all(&self.pool)
+            .await
+    }
+
     pub async fn set_favorite(&self, id: &str, favorite: bool) -> Result<(), sqlx::Error> {
         sqlx::query("UPDATE generations SET favorite = ? WHERE id = ?")
             .bind(favorite)
